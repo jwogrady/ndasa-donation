@@ -1,5 +1,37 @@
 {
+    "name": "ndasa/donation",
+    "description": "NDASA Foundation donation application (Stripe Checkout).",
+    "type": "project",
+    "license": "proprietary",
     "require": {
-        "stripe/stripe-php": "^10.21"
-    }
+        "php": ">=8.2",
+        "ext-pdo_sqlite": "*",
+        "ext-openssl": "*",
+        "ext-mbstring": "*",
+        "stripe/stripe-php": "^16.0",
+        "vlucas/phpdotenv": "^5.6",
+        "symfony/mailer": "^7.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "NDASA\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "NDASA\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "audit": "composer audit",
+        "test": "phpunit"
+    },
+    "config": {
+        "sort-packages": true,
+        "optimize-autoloader": true
+    },
+    "minimum-stability": "stable"
 }

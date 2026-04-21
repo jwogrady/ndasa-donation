@@ -1,0 +1,15 @@
+/.env
+/.env.local
+/vendor/
+/node_modules/
+/storage/*
+!/storage/.gitkeep
+!/storage/logs
+/storage/logs/*
+!/storage/logs/.gitkeep
+*.log
+*.sqlite
+*.sqlite3
+.DS_Store
+.idea/
+.vscode/
