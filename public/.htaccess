@@ -1,0 +1,22 @@
+Options -Indexes -MultiViews
+DirectoryIndex index.php
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+</IfModule>
+
+<Files ~ "^\.">
+  Require all denied
+</Files>
+
+<FilesMatch "\.(env|log|sqlite|sqlite3|ini|md|json|lock|yml|yaml)$">
+  Require all denied
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^webhook\.php$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^ index.php [L]
+</IfModule>
