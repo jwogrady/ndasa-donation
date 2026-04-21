@@ -30,7 +30,9 @@ try {
         tolerance: 300,
     );
 } catch (\UnexpectedValueException $e) {
-    error_log('Webhook: invalid payload — ' . $e->getMessage());
+    // v20+ also throws here when a V2 event notification is posted to a V1
+    // endpoint. Either way, the payload is not something we can process.
+    error_log('Webhook: invalid/malformed payload — ' . $e->getMessage());
     http_response_code(400);
     exit;
 } catch (\Stripe\Exception\SignatureVerificationException $e) {

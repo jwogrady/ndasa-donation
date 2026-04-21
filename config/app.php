@@ -43,6 +43,9 @@ if (is_writable(dirname($logFile))) {
 error_reporting(E_ALL);
 
 \Stripe\Stripe::setApiKey($_ENV['STRIPE_SECRET_KEY']);
+// Pin the Stripe API version so webhook payload shapes are stable across
+// SDK upgrades. Bump this deliberately when you've reviewed the diff.
+\Stripe\Stripe::setApiVersion('2026-03-25.dahlia');
 \Stripe\Stripe::setAppInfo('NDASA-Donation', '1.0.0', $_ENV['APP_URL']);
 
 $isProduction = ($_ENV['APP_ENV'] ?? 'production') === 'production';
