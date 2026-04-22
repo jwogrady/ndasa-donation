@@ -52,24 +52,71 @@ $nonce       = Html::h(defined('NDASA_CSP_NONCE') ? NDASA_CSP_NONCE : '');
   </div>
 <?php endif; ?>
 <header class="site-header">
-  <div class="site-header__inner container container--wide">
-    <a class="site-header__brand" href="https://ndasafoundation.org/" aria-label="NDASA Foundation home">
-      <img class="site-header__logo"
-           src="<?= $base ?>/assets/img/Foundation-Logo.png"
-           alt=""
-           width="123" height="160"
-           decoding="async">
-    </a>
-    <div class="slogan" role="doc-subtitle" aria-live="polite" aria-atomic="true"
-         data-slogan-start="<?= (int) $sloganStart ?>">
-      <span class="slogan__lead"><?= Html::h($sloganFirst['lead']) ?></span>
-      <span class="slogan__body"><?= Html::h($sloganFirst['body']) ?></span>
-      <span class="slogan__rule" aria-hidden="true"></span>
+  <!-- Top contact strip: phone left, social right. Mirrors the
+       purple → red → purple gradient bar on ndasafoundation.org so the
+       donation page reads as a continuation of the same site. -->
+  <div class="site-header__strip">
+    <div class="site-header__strip-inner container container--wide">
+      <a class="site-header__phone" href="tel:+18883163272" aria-label="Call NDASA Foundation">
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
+          <path d="M20 15.5a17.5 17.5 0 0 1-5.4-.85 1.5 1.5 0 0 0-1.52.37l-2.2 2.2a15 15 0 0 1-6.6-6.6l2.2-2.2a1.5 1.5 0 0 0 .38-1.52A17.5 17.5 0 0 1 6 1.5 1.5 1.5 0 0 0 4.5 0H1.5A1.5 1.5 0 0 0 0 1.5 20 20 0 0 0 20 21.5 1.5 1.5 0 0 0 21.5 20v-3a1.5 1.5 0 0 0-1.5-1.5z"/>
+        </svg>
+        <span>888-316-3272</span>
+      </a>
+      <ul class="site-header__social" aria-label="NDASA Foundation on social">
+        <li><a href="https://facebook.com/NDASAFoundation" aria-label="Facebook" rel="noopener">
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
+            <path d="M13 22v-8h3l.5-4H13V7.5c0-1.2.3-2 2-2h2V2.1c-.3 0-1.5-.1-2.8-.1-2.8 0-4.7 1.7-4.7 4.8V10H7v4h2.5v8H13z"/>
+          </svg>
+        </a></li>
+        <li><a href="https://twitter.com/NDASAFoundation" aria-label="X / Twitter" rel="noopener">
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
+            <path d="M18.2 2H21l-6.4 7.3L22.5 22H16l-5-6.6L5 22H2l6.8-7.8L1.7 2h6.6l4.6 6.1L18.2 2zm-1 18h1.6L6.8 3.8H5L17.2 20z"/>
+          </svg>
+        </a></li>
+        <li><a href="https://linkedin.com/company/ndasafoundation" aria-label="LinkedIn" rel="noopener">
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
+            <path d="M4.98 3.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM3 9h4v12H3V9zm7 0h3.8v1.7h.1c.5-1 1.9-2 3.8-2 4.1 0 4.8 2.7 4.8 6.2V21h-4v-5.5c0-1.3 0-3-1.8-3s-2.1 1.4-2.1 2.9V21h-4V9z"/>
+          </svg>
+        </a></li>
+        <li><a href="https://youtube.com/@ndasafoundation" aria-label="YouTube" rel="noopener">
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
+            <path d="M23 7.5s-.2-1.6-.9-2.3c-.9-.9-1.8-.9-2.3-1C16.4 4 12 4 12 4s-4.4 0-7.8.2c-.5.1-1.4.1-2.3 1C1.2 5.9 1 7.5 1 7.5S.8 9.4.8 11.3v1.4C.8 14.6 1 16.5 1 16.5s.2 1.6.9 2.3c.9.9 2.1.9 2.6 1 1.9.2 8 .2 8 .2s4.4 0 7.8-.2c.5-.1 1.4-.1 2.3-1 .7-.7.9-2.3.9-2.3s.2-1.9.2-3.8v-1.4c0-1.9-.2-3.8-.2-3.8zM9.8 15V8.3l5.8 3.4L9.8 15z"/>
+          </svg>
+        </a></li>
+      </ul>
     </div>
-    <span class="site-header__section">
-      <span class="site-header__section-line">501(c)(3)</span>
-      <span class="site-header__section-tag">Donate</span>
-    </span>
+  </div>
+
+  <!-- Main band: pale aqua, three regions.
+       Left   = logo + wordmark + subtitle (matches ndasafoundation.org)
+       Center = rotating slogan (replaces the parent site's nav — we
+                don't want donors bouncing mid-funnel)
+       Right  = "501(C)(3) / DONATE" section label -->
+  <div class="site-header__main">
+    <div class="site-header__main-inner container container--wide">
+      <a class="site-header__brand" href="https://ndasafoundation.org/" aria-label="NDASA Foundation home">
+        <img class="site-header__logo"
+             src="<?= $base ?>/assets/img/Foundation-Logo.png"
+             alt=""
+             width="123" height="160"
+             decoding="async">
+        <span class="site-header__wordmark">
+          <span class="site-header__name">NDASA Foundation</span>
+          <span class="site-header__subtitle">501 (c)3 Non-Profit Organization</span>
+        </span>
+      </a>
+      <div class="slogan" role="doc-subtitle" aria-live="polite" aria-atomic="true"
+           data-slogan-start="<?= (int) $sloganStart ?>">
+        <span class="slogan__lead"><?= Html::h($sloganFirst['lead']) ?></span>
+        <span class="slogan__body"><?= Html::h($sloganFirst['body']) ?></span>
+        <span class="slogan__rule" aria-hidden="true"></span>
+      </div>
+      <span class="site-header__section">
+        <span class="site-header__section-line">501(c)(3)</span>
+        <span class="site-header__section-tag">Donate</span>
+      </span>
+    </div>
   </div>
 </header>
 
@@ -78,17 +125,40 @@ $nonce       = Html::h(defined('NDASA_CSP_NONCE') ? NDASA_CSP_NONCE : '');
 </main>
 
 <footer class="site-footer">
-  <div class="site-footer__inner container container--wide">
-    <p class="site-footer__tagline">
-      <span class="site-footer__eyebrow">Thank you for giving.</span>
-      <span class="site-footer__motto">Educating &amp; advocating for drug-free communities.</span>
-    </p>
-    <p class="site-footer__meta">
-      &copy; <?= date('Y') ?> <a href="https://ndasafoundation.org/" class="site-footer__link">NDASA Foundation</a>
-      &middot; 501(c)(3) non-profit
-      &middot; Payments processed securely by
-      <a href="https://stripe.com" class="site-footer__link" rel="noopener noreferrer">Stripe</a>
-    </p>
+  <!-- Main band: mirrors the header's aqua band so the page bookends
+       cleanly. The orange top border picks up the header's bottom
+       border and "you're in the donation flow" cue. -->
+  <div class="site-footer__main">
+    <div class="site-footer__inner container container--wide">
+      <p class="site-footer__tagline">
+        <span class="site-footer__eyebrow">Thank you for giving.</span>
+        <span class="site-footer__motto">Educating &amp; advocating for healthier, safer communities.</span>
+      </p>
+      <p class="site-footer__meta">
+        &copy; <?= date('Y') ?> <a href="https://ndasafoundation.org/" class="site-footer__link">NDASA Foundation</a>
+        &middot; 501(c)(3) non-profit
+        &middot; Payments processed securely by
+        <a href="https://stripe.com" class="site-footer__link" rel="noopener noreferrer">Stripe</a>
+      </p>
+    </div>
+  </div>
+  <!-- Bottom strip: deep purple, mirrors the header's top contact strip.
+       Quick nav back to the parent site + security reassurance. -->
+  <div class="site-footer__strip">
+    <div class="site-footer__strip-inner container container--wide">
+      <span class="site-footer__strip-left">
+        <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" fill="currentColor">
+          <rect x="3" y="11" width="18" height="11" rx="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2"/>
+        </svg>
+        Secure checkout via Stripe
+      </span>
+      <span class="site-footer__strip-right">
+        <a href="https://ndasafoundation.org/">Home</a>
+        <a href="https://ndasafoundation.org/about/">About</a>
+        <a href="https://ndasafoundation.org/contact/">Contact</a>
+      </span>
+    </div>
   </div>
 </footer>
 
