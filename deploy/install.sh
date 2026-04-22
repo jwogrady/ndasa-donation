@@ -92,6 +92,7 @@ green "Required PHP extensions present."
 echo
 
 # ——— Existing install handling ———
+RESCUED_ENV=""
 if [[ -e "$HIDDEN_DIR" || -e "$PUBLIC_DIR" ]]; then
     yellow "An existing install was detected."
     [[ -e "$HIDDEN_DIR" ]] && echo "    $HIDDEN_DIR exists"
@@ -100,9 +101,25 @@ if [[ -e "$HIDDEN_DIR" || -e "$PUBLIC_DIR" ]]; then
     echo "A backup tag will be appended before anything is overwritten:"
     echo "    $HIDDEN_DIR  ->  ${HIDDEN_DIR}.bak-${BACKUP_TAG}"
     echo "    $PUBLIC_DIR  ->  ${PUBLIC_DIR}.bak-${BACKUP_TAG}"
+    if [[ -f "$HIDDEN_DIR/.env" ]]; then
+        echo
+        green "The active .env will be preserved and restored into the new install."
+        echo "    (It is NEVER overwritten by this script.)"
+    fi
     echo
     confirm "Proceed with backup and reinstall?" \
         || { yellow "Aborted."; exit 0; }
+
+    # Rescue the live .env BEFORE moving the hidden dir, so it can be
+    # restored into the freshly created hidden dir in step 3. The .env
+    # also remains inside the .bak-* directory as a secondary copy.
+    if [[ -f "$HIDDEN_DIR/.env" ]]; then
+        RESCUED_ENV="$(mktemp -t ndasa-env.XXXXXX)"
+        cp -p "$HIDDEN_DIR/.env" "$RESCUED_ENV"
+        chmod 600 "$RESCUED_ENV"
+        green "Active .env rescued to $RESCUED_ENV"
+    fi
+
     [[ -e "$HIDDEN_DIR" ]] && mv "$HIDDEN_DIR" "${HIDDEN_DIR}.bak-${BACKUP_TAG}"
     [[ -e "$PUBLIC_DIR" ]] && mv "$PUBLIC_DIR" "${PUBLIC_DIR}.bak-${BACKUP_TAG}"
     green "Existing install backed up."
@@ -111,6 +128,12 @@ else
         || { yellow "Aborted."; exit 0; }
 fi
 echo
+
+# Guarantee the rescued .env is cleaned up no matter how we exit.
+cleanup_rescued_env() {
+    [[ -n "$RESCUED_ENV" && -f "$RESCUED_ENV" ]] && rm -f "$RESCUED_ENV"
+}
+trap cleanup_rescued_env EXIT
 
 # ——— Step 1: Hidden app directory ———
 bold "[1/6] Creating hidden app directory"
@@ -152,6 +175,9 @@ echo
 bold "[3/6] Provisioning .env"
 if [[ -f "$HIDDEN_DIR/.env" ]]; then
     yellow "  .env already exists — leaving it in place."
+elif [[ -n "$RESCUED_ENV" && -f "$RESCUED_ENV" ]]; then
+    cp -p "$RESCUED_ENV" "$HIDDEN_DIR/.env"
+    green "  Restored the previously active .env — existing config preserved."
 else
     # Seed from template, substituting the detected DB path.
     DB_ABS="$HIDDEN_DIR/storage/donations.sqlite"
