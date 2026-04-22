@@ -21,13 +21,13 @@ $body  ??= '';
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title><?= Html::h($title) ?></title>
-<link rel="stylesheet" href="/assets/css/styles.css">
+<link rel="stylesheet" href="<?= Html::h(NDASA_BASE_PATH) ?>/assets/css/styles.css">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-header">
   <div class="container container--wide">
-    <a class="site-header__brand" href="/">
+    <a class="site-header__brand" href="<?= Html::h(NDASA_BASE_PATH) ?>/">
       <span class="site-header__mark" aria-hidden="true">ND</span>
       <span>
         <strong>NDASA Foundation</strong>

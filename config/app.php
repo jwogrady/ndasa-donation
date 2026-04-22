@@ -65,6 +65,8 @@ error_reporting(E_ALL);
 \Stripe\Stripe::setApiVersion('2026-03-25.dahlia');
 \Stripe\Stripe::setAppInfo('NDASA-Donation', '1.0.0', $_ENV['APP_URL']);
 
+define('NDASA_BASE_PATH', rtrim(parse_url($_ENV['APP_URL'], PHP_URL_PATH) ?? '', '/'));
+
 $isProduction = ($_ENV['APP_ENV'] ?? 'production') === 'production';
 
 // Webhook doesn't need browser security headers, sessions, or HTTPS redirect —
@@ -74,17 +76,16 @@ if (!defined('NDASA_SKIP_SESSION')) {
     $cspNonce = base64_encode(random_bytes(16));
     define('NDASA_CSP_NONCE', $cspNonce);
 
-    // Permissions-Policy: unquoted origins are the correct syntax per the spec.
     header('Strict-Transport-Security: max-age=63072000; includeSubDomains; preload');
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: strict-origin-when-cross-origin');
-    header('Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(self https://checkout.stripe.com)');
+    header('Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(self "https://checkout.stripe.com")');
     header('X-Frame-Options: DENY');
     header(
         "Content-Security-Policy: " .
         "default-src 'self'; " .
         "script-src 'self' 'nonce-{$cspNonce}'; " .
-        "style-src 'self'; " .
+        "style-src 'self' 'nonce-{$cspNonce}'; " .
         "img-src 'self' data:; " .
         "connect-src 'self'; " .
         "form-action 'self' https://checkout.stripe.com; " .

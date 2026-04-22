@@ -87,7 +87,7 @@ ob_start();
 </div>
 
 <p class="actions">
-  <a class="btn btn--primary" href="/">Return to the donation form</a>
+  <a class="btn btn--primary" href="<?= Html::h(NDASA_BASE_PATH) ?>/">Return to the donation form</a>
 </p>
 
 <aside class="contact-help" aria-label="Contact for help">

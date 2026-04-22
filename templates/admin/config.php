@@ -37,13 +37,13 @@ ob_start();
 <?php endif; ?>
 
 <div class="panel">
-  <p class="muted" style="margin-top: 0;">
+  <p class="muted panel-intro">
     Values are read from and saved to the application's <code>.env</code> file.
     A PHP-FPM reload may be required for changes to take full effect; until
     then the running process will continue to use the previous values.
   </p>
 
-  <form method="post" action="/admin/config" autocomplete="off">
+  <form method="post" action="<?= Html::h(NDASA_BASE_PATH) ?>/admin/config" autocomplete="off">
     <input type="hidden" name="<?= Html::h(Csrf::FIELD) ?>" value="<?= Html::h($csrf) ?>">
 
     <?php foreach ($fields as $key): ?>

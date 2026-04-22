@@ -104,7 +104,7 @@ ob_start();
 </section>
 
 <p class="actions">
-  <a class="btn btn--primary" href="/">Make another donation</a>
+  <a class="btn btn--primary" href="<?= \NDASA\Support\Html::h(NDASA_BASE_PATH) ?>/">Make another donation</a>
   <a class="btn btn--secondary" href="https://ndasafoundation.org" rel="noopener">
     Return to main site
   </a>

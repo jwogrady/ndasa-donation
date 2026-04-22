@@ -46,7 +46,7 @@ ob_start();
   <div class="notice notice--err" role="alert">
     <strong>Configuration incomplete &mdash; donations may fail.</strong>
     Required values not set: <?= Html::h(implode(', ', $missingRequired)) ?>.
-    Visit <a href="/admin/config">Config</a> to fix.
+    Visit <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/config">Config</a> to fix.
   </div>
 <?php endif; ?>
 
@@ -114,14 +114,14 @@ ob_start();
 <h2>System Health</h2>
 <?php foreach ($health as $section => $rows): ?>
   <div class="panel">
-    <h3 style="margin:0 0 12px; font-size:14px; color:#555; text-transform:uppercase; letter-spacing:0.5px;">
+    <h3 class="panel-subheading">
       <?= Html::h($section) ?>
     </h3>
     <table>
       <thead>
         <tr>
-          <th style="width:40%;">Check</th>
-          <th style="width:15%;">Status</th>
+          <th class="col-check">Check</th>
+          <th class="col-status">Status</th>
           <th>Detail</th>
         </tr>
       </thead>
@@ -146,7 +146,7 @@ ob_start();
   </div>
 <?php endforeach; ?>
 
-<p class="muted" style="margin-top: 24px;">
+<p class="muted fineprint">
   Page views are counted per GET request to <code>/</code>, throttled to one
   entry per 30 seconds per session. Donation counts and totals reflect
   webhook-confirmed successful payments only (rows with <code>status = 'paid'</code>);

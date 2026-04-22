@@ -23,7 +23,7 @@ $appVersion ??= '';
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title><?= Html::h($title) ?> &mdash; NDASA Admin</title>
-<style>
+<style nonce="<?= Html::h(NDASA_CSP_NONCE) ?>">
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
   body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #1a1a1a; background: #f6f6f6; }
@@ -62,14 +62,19 @@ $appVersion ??= '';
   .health-status-ok   { color: #1b5e20; font-weight: 600; }
   .health-status-fail { color: #7f1d1d; font-weight: 600; background: #fdecea; padding: 2px 6px; border-radius: 3px; }
   .health-detail-fail { color: #7f1d1d; }
+  .panel-intro { margin-top: 0; }
+  .panel-subheading { margin: 0 0 12px; font-size: 14px; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }
+  .col-check  { width: 40%; }
+  .col-status { width: 15%; }
+  .fineprint  { margin-top: 24px; }
 </style>
 </head>
 <body>
 <header>
   <h1>NDASA Admin</h1>
   <nav>
-    <a href="/admin" class="<?= $active === 'dashboard' ? 'active' : '' ?>">Dashboard</a>
-    <a href="/admin/config" class="<?= $active === 'config' ? 'active' : '' ?>">Config</a>
+    <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin" class="<?= $active === 'dashboard' ? 'active' : '' ?>">Dashboard</a>
+    <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/config" class="<?= $active === 'config' ? 'active' : '' ?>">Config</a>
   </nav>
 </header>
 <main>
