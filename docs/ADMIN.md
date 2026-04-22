@@ -175,7 +175,7 @@ For each Stripe event, the application:
 
 ## Rate limiting
 
-The `/checkout` POST handler applies a **5-requests-per-minute per-IP** limit, backed by a single SQLite atomic UPSERT. An exceeded limit returns a `429` with a friendly error page. The limit is designed to blunt card-testing attacks and should not affect legitimate donors.
+The `/checkout` POST handler applies a **5-requests-per-minute per-IP** limit, backed by a short SQLite transaction (select-then-insert-or-update; Nexcess managed WP ships SQLite 3.7.17, which predates UPSERT). An exceeded limit returns a `429` with a friendly error page. The limit is designed to blunt card-testing attacks and should not affect legitimate donors.
 
 The "per-IP" identifier is resolved through `ClientIp`, which trusts `X-Forwarded-For` only if the direct peer address is listed in `TRUSTED_PROXIES`. Set `TRUSTED_PROXIES` to the CIDR or IP of your CDN or load balancer. If the app is directly connected, leave it empty.
 
