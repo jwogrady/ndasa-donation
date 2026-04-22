@@ -1283,14 +1283,14 @@ a:hover { color: var(--cta); }
   h1 { font-size: 1.5rem; }
   .status { flex-direction: column; gap: 0.5rem; }
 
-  /* Form-first on mobile: donor sees the amount picker on the first
-     scroll. Impact / tax-note / other-ways fall below. DOM order is
-     preserved for screen readers; only the visual flow reorders. */
+  /* Impact cards sit right under the hero pills on mobile so the donor
+     sees concrete gift-impact examples before the amount picker. DOM
+     order is preserved for screen readers; only the visual flow reorders. */
   main.container { display: flex; flex-direction: column; }
   main.container > .hero         { order: 1; }
   main.container > .notice       { order: 2; }
-  main.container > .donation-form{ order: 3; }
-  main.container > .impact       { order: 4; }
+  main.container > .impact       { order: 3; }
+  main.container > .donation-form{ order: 4; }
   main.container > .tax-note     { order: 5; }
   main.container > .other-ways   { order: 6; }
 
