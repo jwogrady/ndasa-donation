@@ -54,6 +54,13 @@ This will give you the donation form. To actually create a Checkout session you 
 - **Conversion rate** = donations &divide; page views, expressed as a percentage rounded to one decimal place. Zero page views yields 0%.
 - **Recent donations** shows the ten most recent rows, newest first.
 
+### Performance & Metrics Notes
+
+- **Page views are throttled** to one record per 30 seconds per session, so a refresh-happy donor or bot with a cookie jar cannot inflate the count.
+- **Metrics use database aggregates** (`COUNT`, `SUM`, `COUNT(DISTINCT …)`); results are memoised per request so the dashboard runs each query at most once per page load.
+- **Indexes on `donations(created_at)` and `page_views(created_at)`** are created automatically on first connect and are required for dashboard queries to remain fast as volume grows.
+- **System Health warnings** appear on `/admin` when any required env var is missing, any expected table or index is absent, or the database is unreachable.
+
 ## Authors
 
 - **William Cross** &mdash; Original Author. Established the initial donation application and the foundational work that this platform continues.

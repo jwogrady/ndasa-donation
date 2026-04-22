@@ -26,22 +26,35 @@ use PDO;
  */
 final class Metrics
 {
+    /**
+     * Per-request memoization. Each metric runs at most one SQL query per
+     * instance. Keys are distinct integers / floats, so null can represent
+     * "not yet computed" without colliding with a legitimate zero result.
+     */
+    private ?int   $pageViewCount     = null;
+    private ?int   $donationCount     = null;
+    private ?int   $donorCount        = null;
+    private ?int   $totalDonationCents = null;
+    private ?float $conversionPercent = null;
+
     public function __construct(private readonly PDO $db) {}
 
     public function pageViewCount(): int
     {
-        return (int) $this->db->query('SELECT COUNT(*) FROM page_views')->fetchColumn();
+        return $this->pageViewCount ??=
+            (int) $this->db->query('SELECT COUNT(*) FROM page_views')->fetchColumn();
     }
 
     public function donationCount(): int
     {
-        return (int) $this->db->query('SELECT COUNT(*) FROM donations')->fetchColumn();
+        return $this->donationCount ??=
+            (int) $this->db->query('SELECT COUNT(*) FROM donations')->fetchColumn();
     }
 
     /** Distinct donor count (by email, case-insensitive). */
     public function donorCount(): int
     {
-        return (int) $this->db
+        return $this->donorCount ??= (int) $this->db
             ->query('SELECT COUNT(DISTINCT lower(email)) FROM donations')
             ->fetchColumn();
     }
@@ -49,8 +62,8 @@ final class Metrics
     /** Sum of donation amounts in cents. Includes refunded rows by design; the spec is gross. */
     public function totalDonationCents(): int
     {
-        $v = $this->db->query('SELECT COALESCE(SUM(amount_cents), 0) FROM donations')->fetchColumn();
-        return (int) $v;
+        return $this->totalDonationCents ??=
+            (int) $this->db->query('SELECT COALESCE(SUM(amount_cents), 0) FROM donations')->fetchColumn();
     }
 
     /**
@@ -59,11 +72,14 @@ final class Metrics
      */
     public function conversionRatePercent(): float
     {
+        if ($this->conversionPercent !== null) {
+            return $this->conversionPercent;
+        }
         $views = $this->pageViewCount();
         if ($views === 0) {
-            return 0.0;
+            return $this->conversionPercent = 0.0;
         }
-        return round(($this->donationCount() / $views) * 100, 1);
+        return $this->conversionPercent = round(($this->donationCount() / $views) * 100, 1);
     }
 
     /**

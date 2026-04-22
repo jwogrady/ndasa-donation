@@ -60,34 +60,76 @@ final class Auth
     /**
      * Extract the submitted Basic credentials from $_SERVER, falling back to
      * parsing HTTP_AUTHORIZATION ourselves when PHP_AUTH_* is unset. Always
-     * returns a two-element [user, pass] tuple; missing values are empty
-     * strings so the subsequent hash_equals comparison runs in constant time.
+     * returns a two-element [user, pass] tuple; missing or malformed input
+     * yields two empty strings so the subsequent hash_equals comparison
+     * still runs in constant time and a garbage header is indistinguishable
+     * (timing-wise) from an incorrect password.
+     *
+     * Hardened against these real-world oddities:
+     * - PHP_AUTH_* unset by FastCGI / LiteSpeed.
+     * - HTTP_AUTHORIZATION with surrounding whitespace from a proxy.
+     * - Non-string values in $_SERVER (e.g. a pollution attempt).
+     * - Empty scheme, unknown scheme, scheme with no token.
+     * - base64_decode failures, decoded payload without ":", or a decoded
+     *   payload whose first byte is ":" (empty username).
+     * - Any unexpected throwable during parsing (defence in depth).
      *
      * @param array<string,mixed> $server
      * @return array{0:string,1:string}
      */
     private static function readCredentials(array $server): array
     {
-        $user = (string) ($server['PHP_AUTH_USER'] ?? '');
-        $pass = (string) ($server['PHP_AUTH_PW'] ?? '');
+        $user = is_string($server['PHP_AUTH_USER'] ?? null) ? (string) $server['PHP_AUTH_USER'] : '';
+        $pass = is_string($server['PHP_AUTH_PW']   ?? null) ? (string) $server['PHP_AUTH_PW']   : '';
 
         if ($user !== '') {
             return [$user, $pass];
         }
 
-        // Some FastCGI setups strip PHP_AUTH_* but preserve Authorization.
-        $header = (string) ($server['HTTP_AUTHORIZATION'] ?? $server['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
-        if ($header === '' || stripos($header, 'basic ') !== 0) {
+        try {
+            return self::parseAuthorizationHeader($server);
+        } catch (\Throwable $e) {
+            // Belt-and-braces: nothing in here should throw, but if the host
+            // ever feeds us something truly unexpected we fail closed.
+            error_log('Admin auth: header parse raised ' . $e::class . ': ' . $e->getMessage());
+            return ['', ''];
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $server
+     * @return array{0:string,1:string}
+     */
+    private static function parseAuthorizationHeader(array $server): array
+    {
+        $candidates = [
+            $server['HTTP_AUTHORIZATION'] ?? null,
+            $server['REDIRECT_HTTP_AUTHORIZATION'] ?? null,
+        ];
+        $header = '';
+        foreach ($candidates as $c) {
+            if (is_string($c) && trim($c) !== '') {
+                $header = trim($c);
+                break;
+            }
+        }
+        if ($header === '') {
             return ['', ''];
         }
 
-        $decoded = base64_decode(substr($header, 6), strict: true);
-        if ($decoded === false || !str_contains($decoded, ':')) {
+        // "Basic <token>" — exactly one token, optional trailing padding
+        // but no other garbage. Case-insensitive scheme per RFC 7617.
+        if (!preg_match('/^Basic[ \t]+([A-Za-z0-9+\/=]+)[ \t]*$/i', $header, $m)) {
+            return ['', ''];
+        }
+
+        $decoded = base64_decode($m[1], strict: true);
+        if (!is_string($decoded) || $decoded === '' || !str_contains($decoded, ':')) {
             return ['', ''];
         }
 
         [$u, $p] = explode(':', $decoded, 2);
-        return [$u, $p];
+        return [(string) $u, (string) $p];
     }
 
     private static function challenge(): never

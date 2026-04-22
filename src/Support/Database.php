@@ -65,5 +65,11 @@ final class Database
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             created_at INTEGER NOT NULL
         )');
+
+        // Indexes — both of these columns are filtered/ordered in dashboard
+        // queries; without them, recent-donation lookups become full scans
+        // once the tables have any real volume.
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_donations_created_at ON donations(created_at)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_page_views_created_at ON page_views(created_at)');
     }
 }
