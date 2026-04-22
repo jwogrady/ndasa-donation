@@ -59,10 +59,6 @@ $nonce       = Html::h(defined('NDASA_CSP_NONCE') ? NDASA_CSP_NONCE : '');
            alt=""
            width="123" height="160"
            decoding="async">
-      <span class="site-header__wordmark">
-        <span class="site-header__name">NDASA Foundation</span>
-        <span class="site-header__section">501 (c)3 &middot; Donate</span>
-      </span>
     </a>
     <div class="slogan" role="doc-subtitle" aria-live="polite" aria-atomic="true"
          data-slogan-start="<?= (int) $sloganStart ?>">
@@ -70,6 +66,10 @@ $nonce       = Html::h(defined('NDASA_CSP_NONCE') ? NDASA_CSP_NONCE : '');
       <span class="slogan__body"><?= Html::h($sloganFirst['body']) ?></span>
       <span class="slogan__rule" aria-hidden="true"></span>
     </div>
+    <span class="site-header__section">
+      <span class="site-header__section-line">501(c)(3)</span>
+      <span class="site-header__section-tag">Donate</span>
+    </span>
   </div>
 </header>
 
