@@ -22,6 +22,12 @@
  * @var array<string,list<array{label:string,ok:bool,detail:?string}>> $health
  *          Grouped health-check rows keyed by section name.
  * @var string           $appVersion       Resolved app version string.
+ * @var string           $stripeMode       'live' or 'test'.
+ * @var bool             $testReady        True when STRIPE_TEST_* vars are set.
+ * @var bool             $liveReady        True when live STRIPE_* vars are set.
+ * @var string           $csrf             CSRF token for the mode-toggle form.
+ * @var ?string          $flashOk          Success flash from the mode toggle.
+ * @var ?string          $flashErr         Error flash from the mode toggle.
  */
 
 use NDASA\Support\Html;
@@ -57,6 +63,53 @@ ob_start();
     migration block runs against the live database.
   </div>
 <?php endif; ?>
+
+<?php if (!empty($flashOk)): ?>
+  <div class="notice notice--ok" role="status"><?= Html::h($flashOk) ?></div>
+<?php endif; ?>
+<?php if (!empty($flashErr)): ?>
+  <div class="notice notice--err" role="alert"><?= Html::h($flashErr) ?></div>
+<?php endif; ?>
+
+<?php
+  $isTest  = $stripeMode === 'test';
+  $canFlip = $isTest ? $liveReady : $testReady;
+  $nextMode = $isTest ? 'live' : 'test';
+  $nextLabel = $isTest ? 'LIVE' : 'TEST';
+?>
+<section class="mode-panel mode-panel--<?= $isTest ? 'test' : 'live' ?>" aria-labelledby="mode-heading">
+  <div class="mode-panel__left">
+    <div class="mode-panel__pulse" aria-hidden="true"></div>
+    <div>
+      <div class="mode-panel__eyebrow">Payment Mode</div>
+      <h2 id="mode-heading" class="mode-panel__title">
+        <?= $isTest ? 'TEST MODE' : 'LIVE MODE' ?>
+      </h2>
+      <p class="mode-panel__sub">
+        <?php if ($isTest): ?>
+          Using Stripe test credentials. Payments are simulated — no money will be moved.
+        <?php else: ?>
+          Using Stripe live credentials. Real cards, real charges.
+        <?php endif; ?>
+      </p>
+    </div>
+  </div>
+  <form method="post" action="<?= Html::h(NDASA_BASE_PATH) ?>/admin/stripe-mode" class="mode-panel__form">
+    <input type="hidden" name="<?= \NDASA\Http\Csrf::FIELD ?>" value="<?= Html::h($csrf) ?>">
+    <input type="hidden" name="mode" value="<?= Html::h($nextMode) ?>">
+    <button type="submit" class="mode-panel__btn" <?= $canFlip ? '' : 'disabled' ?>
+        onclick="return confirm('Switch Stripe to <?= $nextLabel ?> mode? Future checkouts will use <?= $nextLabel ?> credentials immediately.')">
+      Switch to <?= $nextLabel ?>
+    </button>
+    <?php if (!$canFlip): ?>
+      <p class="mode-panel__hint">
+        Missing <?= $isTest ? 'live' : 'test' ?> credentials in .env
+        (<code>STRIPE_<?= $isTest ? 'LIVE' : 'TEST' ?>_SECRET_KEY</code>,
+        <code>STRIPE_<?= $isTest ? 'LIVE' : 'TEST' ?>_WEBHOOK_SECRET</code>).
+      </p>
+    <?php endif; ?>
+  </form>
+</section>
 
 <div class="stats">
   <div class="stat">

@@ -15,6 +15,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/app.php';
 
+use NDASA\Admin\AppConfig;
 use NDASA\Admin\Auth as AdminAuth;
 use NDASA\Admin\EnvFile;
 use NDASA\Admin\HealthCheck as AdminHealthCheck;
@@ -54,9 +55,10 @@ try {
         $method === 'GET'  && $path === '/'              => render_form(),
         $method === 'POST' && ($path === '/checkout' || $path === '/') => handle_checkout(),
         $method === 'GET'  && $path === '/success'       => render_success(),
-        $method === 'GET'  && $path === '/admin'         => render_admin_dashboard(),
-        $method === 'GET'  && $path === '/admin/config'  => render_admin_config(),
-        $method === 'POST' && $path === '/admin/config'  => handle_admin_config(),
+        $method === 'GET'  && $path === '/admin'              => render_admin_dashboard(),
+        $method === 'GET'  && $path === '/admin/config'       => render_admin_config(),
+        $method === 'POST' && $path === '/admin/config'       => handle_admin_config(),
+        $method === 'POST' && $path === '/admin/stripe-mode'  => handle_admin_stripe_mode(),
         default => not_found(),
     };
 } catch (\Throwable $e) {
@@ -301,7 +303,7 @@ function admin_validate_field(string $key, string $value): ?string
     }
 }
 
-function render_admin_dashboard(): void
+function render_admin_dashboard(?string $flashOk = null, ?string $flashErr = null): void
 {
     // Some dashboards can still render even if the DB is unreachable — we
     // want the health panel to say so rather than throwing a 500.
@@ -310,6 +312,7 @@ function render_admin_dashboard(): void
     $conversionPct = 0.0;
     $recent = [];
     $missingIndexes = ['idx_donations_created_at', 'idx_page_views_created_at'];
+    $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
 
     try {
         $db = Database::connection();
@@ -325,11 +328,65 @@ function render_admin_dashboard(): void
         error_log('Admin dashboard metrics unavailable: ' . $e->getMessage());
     }
 
+    // Target mode's credentials must be present before the toggle is offered,
+    // or the flip would break the donor form on the next request.
+    $testReady = !empty($_ENV['STRIPE_TEST_SECRET_KEY']) && !empty($_ENV['STRIPE_TEST_WEBHOOK_SECRET']);
+    $liveReady = !empty($_ENV['STRIPE_LIVE_SECRET_KEY'] ?? $_ENV['STRIPE_SECRET_KEY'] ?? null)
+              && !empty($_ENV['STRIPE_LIVE_WEBHOOK_SECRET'] ?? $_ENV['STRIPE_WEBHOOK_SECRET'] ?? null);
+
     $missingRequired = admin_missing_required();
     $health          = AdminHealthCheck::all();
     $appVersion      = AdminVersion::current();
+    $csrf            = Csrf::token();
 
     require __DIR__ . '/../templates/admin/dashboard.php';
+}
+
+function handle_admin_stripe_mode(): void
+{
+    $token = $_POST[Csrf::FIELD] ?? null;
+    if (!is_string($token) || !Csrf::validate($token)) {
+        http_response_code(400);
+        render_admin_dashboard(flashErr: 'Session expired. Please try again.');
+        return;
+    }
+
+    $target = $_POST['mode'] ?? '';
+    if ($target !== AppConfig::MODE_LIVE && $target !== AppConfig::MODE_TEST) {
+        http_response_code(400);
+        render_admin_dashboard(flashErr: 'Invalid mode.');
+        return;
+    }
+
+    // Refuse the flip if the target mode has no credentials in .env.
+    if ($target === AppConfig::MODE_TEST) {
+        if (empty($_ENV['STRIPE_TEST_SECRET_KEY']) || empty($_ENV['STRIPE_TEST_WEBHOOK_SECRET'])) {
+            render_admin_dashboard(flashErr: 'Test mode is not configured: set STRIPE_TEST_SECRET_KEY and STRIPE_TEST_WEBHOOK_SECRET in .env.');
+            return;
+        }
+    } else {
+        $liveSk = $_ENV['STRIPE_LIVE_SECRET_KEY']     ?? $_ENV['STRIPE_SECRET_KEY']     ?? '';
+        $liveWh = $_ENV['STRIPE_LIVE_WEBHOOK_SECRET'] ?? $_ENV['STRIPE_WEBHOOK_SECRET'] ?? '';
+        if ($liveSk === '' || $liveWh === '') {
+            render_admin_dashboard(flashErr: 'Live mode is not configured: set STRIPE_LIVE_SECRET_KEY and STRIPE_LIVE_WEBHOOK_SECRET in .env.');
+            return;
+        }
+    }
+
+    try {
+        $cfg = new AppConfig(Database::connection());
+        $previous = $cfg->stripeMode();
+        $cfg->set(AppConfig::STRIPE_MODE, $target);
+        $actor = $_SERVER['PHP_AUTH_USER'] ?? '?';
+        error_log("NDASA: stripe_mode {$previous} -> {$target} by admin '{$actor}'");
+    } catch (\Throwable $e) {
+        error_log('Stripe mode toggle failed: ' . $e->getMessage());
+        render_admin_dashboard(flashErr: 'Could not save the mode change: ' . $e->getMessage());
+        return;
+    }
+
+    $label = $target === AppConfig::MODE_TEST ? 'TEST' : 'LIVE';
+    render_admin_dashboard(flashOk: "Stripe mode is now {$label}. New checkouts will use {$label} credentials.");
 }
 
 function render_admin_config(?string $flashOk = null, ?string $flashErr = null): void

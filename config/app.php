@@ -24,10 +24,9 @@ if (is_file($root . '/.env')) {
     Dotenv::createImmutable($root)->safeLoad();
 }
 
-// Fail closed if required secrets are missing.
+// Fail closed if required non-Stripe secrets are missing. Stripe key/webhook
+// pairs are validated below after selecting the active mode (live/test).
 $required = [
-    'STRIPE_SECRET_KEY',
-    'STRIPE_WEBHOOK_SECRET',
     'APP_URL',
     'DB_PATH',
     'MAIL_FROM',
@@ -59,7 +58,43 @@ if (is_writable(dirname($logFile))) {
 }
 error_reporting(E_ALL);
 
-\Stripe\Stripe::setApiKey($_ENV['STRIPE_SECRET_KEY']);
+// ——— Stripe mode selection ———
+// The donation app can run in "live" or "test" mode. Mode is stored in the
+// app_config SQLite table so operators can flip it from the admin UI without
+// editing .env or reloading PHP-FPM. Each mode reads its own key pair from
+// .env (STRIPE_LIVE_SECRET_KEY / STRIPE_TEST_SECRET_KEY, etc.). Legacy
+// STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET are accepted as fallbacks for
+// live mode so older installs keep working.
+try {
+    $ndasaMode = (new \NDASA\Admin\AppConfig(\NDASA\Support\Database::connection()))->stripeMode();
+} catch (\Throwable $e) {
+    // DB not reachable — fall back to live. Missing DB is a bigger problem
+    // that the rest of the app will surface on the first real query.
+    error_log('NDASA: cannot read stripe_mode from app_config (' . $e->getMessage() . '); defaulting to live');
+    $ndasaMode = \NDASA\Admin\AppConfig::MODE_LIVE;
+}
+
+if ($ndasaMode === \NDASA\Admin\AppConfig::MODE_TEST) {
+    $stripeSecret  = $_ENV['STRIPE_TEST_SECRET_KEY']     ?? '';
+    $stripeWebhook = $_ENV['STRIPE_TEST_WEBHOOK_SECRET'] ?? '';
+} else {
+    $stripeSecret  = $_ENV['STRIPE_LIVE_SECRET_KEY']     ?? $_ENV['STRIPE_SECRET_KEY']     ?? '';
+    $stripeWebhook = $_ENV['STRIPE_LIVE_WEBHOOK_SECRET'] ?? $_ENV['STRIPE_WEBHOOK_SECRET'] ?? '';
+}
+
+if ($stripeSecret === '' || $stripeWebhook === '') {
+    http_response_code(500);
+    error_log("NDASA: Stripe {$ndasaMode} mode selected but its key/webhook pair is missing from .env");
+    exit('Server misconfigured.');
+}
+
+// Re-populate $_ENV so downstream code (webhook.php, admin) reads the mode-
+// appropriate secret without needing to know about the mode system.
+$_ENV['STRIPE_SECRET_KEY']     = $stripeSecret;
+$_ENV['STRIPE_WEBHOOK_SECRET'] = $stripeWebhook;
+define('NDASA_STRIPE_MODE', $ndasaMode);
+
+\Stripe\Stripe::setApiKey($stripeSecret);
 // Pin the Stripe API version so webhook payload shapes are stable across
 // SDK upgrades. Bump this deliberately when you've reviewed the diff.
 \Stripe\Stripe::setApiVersion('2026-03-25.dahlia');

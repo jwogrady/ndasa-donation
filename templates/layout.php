@@ -27,8 +27,21 @@ $base = Html::h(NDASA_BASE_PATH);
 <link rel="apple-touch-icon" href="<?= $base ?>/assets/img/apple-touch-icon.png">
 <link rel="stylesheet" href="<?= $base ?>/assets/css/styles.css">
 </head>
-<body>
+<body<?= (defined('NDASA_STRIPE_MODE') && NDASA_STRIPE_MODE === 'test') ? ' class="is-test-mode"' : '' ?>>
 <a class="skip" href="#main">Skip to content</a>
+<?php if (defined('NDASA_STRIPE_MODE') && NDASA_STRIPE_MODE === 'test'): ?>
+  <div class="test-banner" role="alert" aria-live="polite">
+    <div class="test-banner__inner">
+      <span class="test-banner__chip" aria-hidden="true">
+        <span class="test-banner__dot"></span>TEST
+      </span>
+      <span class="test-banner__msg">
+        <strong>Test mode active.</strong>
+        Payments are simulated &mdash; no card will be charged.
+      </span>
+    </div>
+  </div>
+<?php endif; ?>
 <header class="site-header">
   <div class="container container--wide">
     <a class="site-header__brand" href="https://ndasafoundation.org/">

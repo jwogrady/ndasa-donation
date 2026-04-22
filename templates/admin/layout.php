@@ -243,6 +243,103 @@ $appVersion ??= '';
   .col-check  { width: 40%; }
   .col-status { width: 15%; }
   .fineprint  { margin-top: 24px; color: var(--dim); }
+
+  /* Stripe mode panel — live is calm/green, test is loud/amber. The pulse
+     dot and hairline top border make the current mode unmistakable at a
+     glance without relying on color alone. */
+  .mode-panel {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 18px 22px;
+    margin: 0 0 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  .mode-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 3px;
+  }
+  .mode-panel--live { background: linear-gradient(135deg, #1f3527 0%, #263a2d 100%); border-color: var(--ok-border); }
+  .mode-panel--live::before { background: linear-gradient(90deg, #7cc68b 0%, #4fa468 100%); }
+  .mode-panel--test { background: linear-gradient(135deg, #3a2e15 0%, #41351a 100%); border-color: #7a5f22; }
+  .mode-panel--test::before {
+    background: repeating-linear-gradient(45deg,
+      #f5b942 0 12px,
+      #1a1c22 12px 24px);
+  }
+  .mode-panel__left { display: flex; align-items: center; gap: 16px; }
+  .mode-panel__pulse {
+    width: 14px; height: 14px; border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .mode-panel--live .mode-panel__pulse {
+    background: #7cc68b;
+    box-shadow: 0 0 0 0 rgba(124,198,139,.7);
+    animation: mode-pulse-ok 2.4s ease-out infinite;
+  }
+  .mode-panel--test .mode-panel__pulse {
+    background: #f5b942;
+    box-shadow: 0 0 0 0 rgba(245,185,66,.7);
+    animation: mode-pulse-warn 1.6s ease-out infinite;
+  }
+  @keyframes mode-pulse-ok   { 0% { box-shadow: 0 0 0 0 rgba(124,198,139,.7); } 70% { box-shadow: 0 0 0 12px rgba(124,198,139,0); } 100% { box-shadow: 0 0 0 0 rgba(124,198,139,0); } }
+  @keyframes mode-pulse-warn { 0% { box-shadow: 0 0 0 0 rgba(245,185,66,.7);  } 70% { box-shadow: 0 0 0 14px rgba(245,185,66,0);  } 100% { box-shadow: 0 0 0 0 rgba(245,185,66,0);  } }
+  @media (prefers-reduced-motion: reduce) {
+    .mode-panel__pulse { animation: none; }
+  }
+  .mode-panel__eyebrow {
+    font-family: 'Roboto Condensed', system-ui, sans-serif;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+  .mode-panel__title {
+    margin: 0;
+    font-family: 'Roboto Condensed', system-ui, sans-serif;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 2px;
+  }
+  .mode-panel--live .mode-panel__title { color: #9bdcab; }
+  .mode-panel--test .mode-panel__title { color: #ffd37a; }
+  .mode-panel__sub { margin: 4px 0 0; color: var(--ink); font-size: 13px; max-width: 48ch; }
+  .mode-panel__form { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .mode-panel__btn {
+    font-family: 'Roboto Condensed', system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    padding: 10px 18px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    color: #fff;
+    background: var(--cta);
+    transition: background .12s ease;
+  }
+  .mode-panel__btn:hover:not([disabled]) { background: var(--cta-hover); }
+  .mode-panel__btn[disabled] {
+    opacity: .45;
+    cursor: not-allowed;
+    background: var(--surface-2);
+    color: var(--muted);
+    border-color: var(--border);
+  }
+  .mode-panel__hint { margin: 0; font-size: 11px; color: var(--muted); text-align: right; }
+  .mode-panel__hint code { background: rgba(255,255,255,.06); padding: 1px 4px; border-radius: 3px; }
+  @media (max-width: 620px) {
+    .mode-panel { flex-direction: column; align-items: stretch; }
+    .mode-panel__form { align-items: stretch; }
+    .mode-panel__hint { text-align: left; }
+  }
 </style>
 </head>
 <body>

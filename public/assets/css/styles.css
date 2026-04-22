@@ -663,3 +663,97 @@ button[type="submit"][disabled] {
   opacity: 0.75;
   cursor: progress;
 }
+
+/* ————————————————————————————————————————————————————————
+   Test-mode banner
+   Only rendered when the Stripe mode flag is "test". Designed to be
+   unmistakable without being annoying: diagonal amber/black caution-tape
+   background that slowly drifts, a pulsing "TEST" chip for motion
+   affordance, and a subtle shimmer sweep every 8s so the eye re-catches
+   it during a long form fill. All animations disabled under
+   prefers-reduced-motion; full text remains visible.
+   ———————————————————————————————————————————————————————— */
+.test-banner {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  color: #1a1a1a;
+  background:
+    linear-gradient(90deg,
+      rgba(255,255,255,0) 0%,
+      rgba(255,255,255,.35) 50%,
+      rgba(255,255,255,0) 100%) 0 0 / 220px 100% no-repeat,
+    repeating-linear-gradient(-45deg,
+      #f5b942 0 28px,
+      #1a1a1a 28px 56px);
+  background-position: -220px 0, 0 0;
+  animation: ndasa-test-tape 60s linear infinite,
+             ndasa-test-shimmer 8s ease-in-out infinite;
+  box-shadow: 0 2px 0 #b8860b, 0 6px 12px rgba(0,0,0,.15);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.test-banner__inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(255, 238, 180, 0.92);
+  /* Inner cream band keeps the text legible over the stripes */
+}
+.test-banner__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #1a1a1a;
+  color: #ffd37a;
+  font-family: 'Roboto Condensed', system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.test-banner__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff5c5c;
+  box-shadow: 0 0 0 0 rgba(255,92,92,.7);
+  animation: ndasa-test-dot 1.4s ease-out infinite;
+}
+.test-banner__msg { font-size: 14px; line-height: 1.35; }
+.test-banner__msg strong { font-weight: 700; }
+
+@keyframes ndasa-test-tape {
+  /* Drift the caution stripes one full tile diagonally to the right.
+     Two backgrounds: first is the shimmer (handled separately below),
+     second is the stripes — we only animate position of the second. */
+  from { background-position: -220px 0, 0 0; }
+  to   { background-position: -220px 0, 560px 0; }
+}
+@keyframes ndasa-test-shimmer {
+  0%, 70% { background-position: -220px 0, 0 0; }
+  100%    { background-position: 100vw 0, 0 0; }
+}
+@keyframes ndasa-test-dot {
+  0%   { box-shadow: 0 0 0 0 rgba(255,92,92,.7); }
+  70%  { box-shadow: 0 0 0 8px rgba(255,92,92,0); }
+  100% { box-shadow: 0 0 0 0 rgba(255,92,92,0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .test-banner { animation: none; background-position: 0 0; }
+  .test-banner__dot { animation: none; }
+}
+@media (max-width: 540px) {
+  .test-banner__inner { padding: 8px 14px; gap: 10px; }
+  .test-banner__msg { font-size: 13px; }
+  .test-banner__chip { font-size: 11px; padding: 3px 9px; letter-spacing: 1.5px; }
+}
+
+/* When test mode is active, nudge the site-header down so the banner
+   sits cleanly above it. */
+body.is-test-mode .site-header { border-top: none; }

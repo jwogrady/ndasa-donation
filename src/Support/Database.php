@@ -65,6 +65,11 @@ final class Database
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             created_at INTEGER NOT NULL
         )');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS app_config (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        )');
 
         // Indexes — both of these columns are filtered/ordered in dashboard
         // queries; without them, recent-donation lookups become full scans

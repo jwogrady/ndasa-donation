@@ -2,6 +2,18 @@
 
 All notable changes to the NDASA Donation Platform are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- Admin-controlled **Stripe test mode toggle**. The dashboard exposes a Live/Test switch backed by a new `app_config` SQLite table; the flip takes effect on the next request with no `.env` edit and no PHP-FPM reload. Requires paired `STRIPE_LIVE_*` / `STRIPE_TEST_*` secrets in `.env`; legacy `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` remain valid as live-mode fallbacks so existing installs keep working.
+- **Donor-facing test-mode banner** — sticky amber caution bar with a pulsing TEST chip, rendered only while the toggle is in test mode. Respects `prefers-reduced-motion`.
+
+### Fixed
+
+- Rate limiter rewritten to avoid `UPSERT` and `RETURNING` — Nexcess managed WordPress ships SQLite 3.7.17 (2013), which predates both. Every `/checkout` POST was returning a generic error page.
+- Checkout session creation switched from `automatic_payment_methods` to an explicit `payment_method_types: ['card']` list. The NDASA Stripe account rejects the automatic form with `parameter_unknown`.
+
 ## 1.0.0 &mdash; 2026-04-21
 
 Initial public release of the secure-rebuild donation platform. Replaces the legacy donation application wholesale with a webhook-authoritative design that keeps card data off the server and treats Stripe as the single source of truth. Adds a Basic-Auth-protected admin panel with a metrics dashboard, a safe `.env` config editor, and a grouped System Health view.

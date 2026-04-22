@@ -121,7 +121,22 @@ The bootstrap aborts with a 500 at startup if any **Required** variable is missi
 
 ### API keys
 
-Use **test-mode** keys (`sk_test_...`) for staging and development. Use **live-mode** keys (`sk_live_...`) only in production. Never commit either.
+The app stores **two pairs** of Stripe credentials side by side:
+
+- `STRIPE_LIVE_SECRET_KEY` + `STRIPE_LIVE_WEBHOOK_SECRET` (from the dashboard's **Live mode** toggle)
+- `STRIPE_TEST_SECRET_KEY` + `STRIPE_TEST_WEBHOOK_SECRET` (from **Test mode**)
+
+Which pair is active at any moment is controlled by the **Stripe Mode** panel on the admin dashboard. Live mode is the default; test mode must be explicitly selected.
+
+For compatibility with older installs, `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` (without the `_LIVE_` / `_TEST_` prefix) are still honored as a fallback for live mode — so a pre-upgrade `.env` keeps working. Newly provisioned `.env` files should use the explicit `_LIVE_` / `_TEST_` names.
+
+### Switching modes
+
+From `/admin`, click **Switch to TEST** or **Switch to LIVE** in the Stripe Mode panel. The flip is instant: the next `/checkout` request uses the selected pair. The button is disabled when the target mode's credentials are missing from `.env`, so the toggle cannot break an already-working mode.
+
+When test mode is active, a diagonal amber caution banner appears above the donor form ("Test mode active — payments are simulated"). That banner is the donor-visible signal that no real card will be charged.
+
+Every mode change writes an audit line to `storage/logs/app.log` in the form `stripe_mode live -> test by admin '<username>'`.
 
 ### Webhook endpoint
 
@@ -140,7 +155,7 @@ Copy the generated `whsec_...` secret into `STRIPE_WEBHOOK_SECRET` in `.env`.
 
 ### Payment methods
 
-The Checkout session requests `automatic_payment_methods: enabled`. Which methods actually appear to donors is controlled entirely by the Stripe dashboard (**Settings** &rarr; **Payment methods**). Enable or disable Card, Link, Apple Pay, Google Pay, and ACH Direct Debit there. For Apple Pay you must also verify the donation domain in the dashboard.
+The Checkout session sends `payment_method_types: ['card']` explicitly. The NDASA Foundation Stripe account does not have the dashboard-side payment-method configuration that `automatic_payment_methods` requires, so requests using the automatic mode are rejected with `parameter_unknown`. Expand the list in [src/Payment/DonationService.php](../src/Payment/DonationService.php) to add methods (e.g. Link, ACH Direct Debit) as needed; each addition requires a Stripe dashboard config check first.
 
 ### Testing
 
