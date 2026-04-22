@@ -46,6 +46,8 @@
   --cta:           #fa5c1e;  /* orange — all primary CTAs */
   --cta-hover:     #e14a10;
   --cta-soft:      #fff0e8;
+  --gold:          #c9a227;  /* warm gold — frequency accent, premium emphasis */
+  --gold-soft:     #fbf4dc;  /* pale gold tint for accent surfaces */
 
   /* Neutrals — parent uses #202a30 ink, #9c9c9c body, #171717 header text */
   --ink:           #202a30;
@@ -121,104 +123,176 @@ body {
 
 main { flex: 1; width: 100%; }
 
-/* Site chrome — deep brand purple with a thin orange accent underline.
-   The logo PNG already carries the "NDASA FOUNDATION" wordmark and tree
-   seal, so the header deliberately does NOT repeat them in text; we only
-   render a small "Donate" section label on the right of the logo to cue
-   which page the donor is on. Orange bottom border is the shared
-   "you're in the donation flow" signal. */
+/* Site header — mirrors ndasafoundation.org's two-band layout.
+   Top strip = purple→red→purple gradient with contact info and social.
+   Main band = pale aqua with brand wordmark and page context.
+   Orange bottom accent on the main band is the shared "you're in the
+   donation flow" cue, distinct from the parent site. */
 .site-header {
-  background: var(--brand);
-  background-image: linear-gradient(180deg, #6e42ab 0%, var(--brand) 70%, #4e2e7a 100%);
-  border-bottom: 3px solid var(--cta);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.20);
-  color: #fff;
+  box-shadow: 0 1px 0 rgba(98, 59, 153, 0.12);
 }
-/* Three-column layout: logo / slogan / section label. CSS grid so the
-   slogan stays truly centred in the viewport regardless of the side
-   columns' intrinsic widths. */
-.site-header__inner {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+
+/* ── Top contact strip ───────────────────────────────────────────────── */
+.site-header__strip {
+  background: linear-gradient(150deg, var(--brand) 23%, var(--brand-deep) 45%, var(--brand) 100%);
+  color: #fff;
+  font-family: 'Poppins', sans-serif;
+  font-size: 0.82rem;
+}
+.site-header__strip-inner {
+  display: flex;
   align-items: center;
-  gap: 24px;
-  padding-top: 18px;
-  padding-bottom: 18px;
-  margin-top: 0;
-  margin-bottom: 0;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.site-header__phone {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #fff;
+  text-decoration: none;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+.site-header__phone:hover { color: #fff; opacity: 0.85; }
+.site-header__phone svg { flex: 0 0 auto; }
+.site-header__social {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.site-header__social a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  text-decoration: none;
+  transition: background 160ms, transform 160ms;
+}
+.site-header__social a:hover {
+  background: var(--cta);
+  color: #fff;
+  transform: scale(1.08);
+}
+
+/* ── Main band ───────────────────────────────────────────────────────── */
+.site-header__main {
+  /* Matches ndasafoundation.org's rgba(200,249,253,0.82) over white. */
+  background: rgba(200, 249, 253, 0.82);
+  border-bottom: 3px solid var(--cta);
+}
+.site-header__main-inner {
+  display: grid;
+  /* 1fr side columns + centered auto track. Overrun protection: cap the
+     center so it can't shoulder-check the right-side DONATE label. */
+  grid-template-columns: 1fr minmax(0, auto) 1fr;
+  align-items: center;
+  gap: 32px;
+  padding-top: 14px;
+  padding-bottom: 14px;
 }
 .site-header__brand {
   justify-self: start;
   display: inline-flex;
   align-items: center;
-  color: #fff;
+  gap: 14px;
+  color: var(--brand);
   text-decoration: none;
 }
 .site-header__logo {
   display: block;
   width: auto;
-  height: 68px;
+  height: 72px;
   max-width: 100%;
-  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.25));
+}
+.site-header__wordmark {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+.site-header__name {
+  font-family: 'Poppins', sans-serif;
+  font-weight: 700;
+  font-size: 1.6rem;
+  color: var(--brand);
+  letter-spacing: 0.2px;
+  text-transform: capitalize;
+  transition: color 160ms;
+}
+.site-header__brand:hover .site-header__name { color: var(--brand-deep); }
+.site-header__subtitle {
+  font-family: 'Arial Black', 'Poppins', sans-serif;
+  font-size: 0.72rem;
+  color: #0c0d0d;
+  margin-top: 2px;
 }
 
-/* Centered slogan column — sits inside the grid's auto track so its
-   natural width determines the column, and `justify-self: center` keeps
-   the text visually centred within it. Text alignment overrides the
-   default right-alignment the slogan still keeps elsewhere. */
+/* Centered slogan — brand purple on the pale aqua band. */
 .site-header .slogan {
   grid-column: 2;
   justify-self: center;
   text-align: center;
   max-width: 30ch;
+  color: var(--brand);
+}
+.site-header .slogan__lead {
+  color: var(--cta);
+}
+.site-header .slogan__body {
+  color: var(--brand);
 }
 .site-header .slogan__rule {
-  /* Re-anchor the animated rule to the center when the slogan is
-     centred — otherwise it still hugs the right edge of the box. */
+  /* Animated hairline, centered on the aqua band. */
   left: 50%;
   right: auto;
   transform: translateX(-50%);
   width: 0;
   background: linear-gradient(90deg,
-    rgba(255, 255, 255, 0) 0%,
+    rgba(98, 59, 153, 0) 0%,
     rgba(250, 92, 30, 0.9) 50%,
-    rgba(255, 255, 255, 0) 100%);
+    rgba(98, 59, 153, 0) 100%);
 }
-.site-header .slogan.is-reveal.is-in .slogan__rule {
-  /* Grow to full width of the centered slogan box. */
-  width: 100%;
-}
+.site-header .slogan.is-reveal.is-in .slogan__rule { width: 100%; }
 
-/* Right-column section label. Two lines stacked: small 501(c)(3) above,
-   bolder "Donate" below. Right-aligned so it hugs the column edge. */
+/* Right-column section label. Small 501(c)(3) over a bolder "DONATE"
+   with an orange accent bar — echoes the orange bottom border on the
+   main band so the CTA slot is visually anchored. */
 .site-header__section {
   justify-self: end;
   display: inline-flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 2px;
-  font-family: 'Roboto Condensed', 'Poppins', sans-serif;
+  gap: 3px;
+  font-family: 'Poppins', sans-serif;
   text-transform: uppercase;
-  color: #fff;
   line-height: 1;
 }
 .site-header__section-line {
-  font-weight: 400;
+  font-weight: 500;
   font-size: 0.65rem;
-  letter-spacing: 2.5px;
-  opacity: 0.75;
+  letter-spacing: 2px;
+  color: var(--brand-deep);
+  opacity: 0.85;
 }
 .site-header__section-tag {
   position: relative;
+  font-family: 'Roboto Condensed', 'Poppins', sans-serif;
   font-weight: 700;
-  font-size: 1.1rem;
+  font-size: 1.25rem;
   letter-spacing: 4px;
-  padding-bottom: 5px;
+  color: var(--brand);
+  padding-bottom: 6px;
 }
 .site-header__section-tag::after {
-  /* Thin orange accent under the "DONATE" label — mirrors the header's
-     bottom border at the element level, so the right column clearly
-     signals "this is the CTA of the site". */
   content: "";
   position: absolute;
   left: 0;
@@ -326,19 +400,26 @@ main { flex: 1; width: 100%; }
   }
 }
 @media (max-width: 720px) {
-  /* Two-row grid: logo + section on top, slogan spans both columns below.
-     Keeps the three regions visible without cramping. */
-  .site-header__inner {
+  /* Top strip stays side-by-side but tightens up. */
+  .site-header__strip-inner {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .site-header__phone { font-size: 0.78rem; }
+  .site-header__social a { width: 26px; height: 26px; }
+
+  /* Main band reflows: logo + section on top, slogan below, full width. */
+  .site-header__main-inner {
     grid-template-columns: auto 1fr;
     grid-template-areas:
       "brand   section"
       "slogan  slogan";
-    row-gap: 12px;
-    gap: 14px;
-    padding-top: 14px;
-    padding-bottom: 14px;
+    row-gap: 10px;
+    gap: 12px;
+    padding-top: 12px;
+    padding-bottom: 12px;
   }
-  .site-header__brand   { grid-area: brand; }
+  .site-header__brand   { grid-area: brand; gap: 12px; }
   .site-header__section { grid-area: section; }
   .site-header .slogan  {
     grid-area: slogan;
@@ -349,23 +430,33 @@ main { flex: 1; width: 100%; }
     min-height: 2.8em;
   }
   .site-header__logo { height: 56px; }
+  .site-header__name { font-size: 1.25rem; }
+  .site-header__subtitle { font-size: 0.65rem; }
 }
-@media (max-width: 420px) {
-  .site-header__section-tag { font-size: 0.95rem; letter-spacing: 3px; }
+@media (max-width: 480px) {
+  /* On very narrow screens, drop social — keep phone only. */
+  .site-header__social { display: none; }
+  .site-header__section-tag { font-size: 1.05rem; letter-spacing: 3px; }
   .site-header__section-line { font-size: 0.6rem; letter-spacing: 2px; }
   .site-header__logo { height: 48px; }
+  .site-header__name { font-size: 1.1rem; }
+  .site-header__subtitle { display: none; }
   .site-header__section { font-size: 0.65rem; }
 }
 
 /* Site footer — mirrors the header's mint-and-orange palette so the page
    feels bookended. Darker mint at the bottom gives gravity; the orange rule
    at the top is the exact same 3px stroke that closes the header. */
-.site-footer {
-  margin-top: 3rem;
-  background: linear-gradient(180deg, #c6e8e4 0%, #b4ddd8 100%);
+/* Footer — bookends the header. Main aqua band mirrors the header's
+   main band; purple strip at the very bottom mirrors the header's
+   purple contact strip. Orange top border mirrors the header's orange
+   bottom border. */
+.site-footer { margin-top: 3rem; color: var(--ink); }
+
+.site-footer__main {
+  background: rgba(200, 249, 253, 0.82);
   border-top: 3px solid var(--cta);
   box-shadow: 0 -1px 0 rgba(98, 59, 153, 0.12);
-  color: var(--ink);
 }
 .site-footer__inner {
   padding-top: 28px;
@@ -379,7 +470,7 @@ main { flex: 1; width: 100%; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   line-height: 1.35;
 }
 .site-footer__eyebrow {
@@ -394,7 +485,7 @@ main { flex: 1; width: 100%; }
   font-family: 'Poppins', sans-serif;
   font-style: italic;
   color: var(--brand);
-  font-size: 1.05rem;
+  font-size: 1.1rem;
   max-width: 42ch;
 }
 .site-footer__meta {
@@ -415,10 +506,58 @@ main { flex: 1; width: 100%; }
   border-bottom-color: currentColor;
 }
 
+/* Bottom strip — purple band with security reassurance + quick links. */
+.site-footer__strip {
+  background: linear-gradient(150deg, var(--brand) 23%, var(--brand-deep) 45%, var(--brand) 100%);
+  color: #fff;
+  font-family: 'Poppins', sans-serif;
+  font-size: 0.82rem;
+}
+.site-footer__strip-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.site-footer__strip-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0.95;
+}
+.site-footer__strip-left svg { opacity: 0.9; }
+.site-footer__strip-right {
+  display: inline-flex;
+  gap: 18px;
+}
+.site-footer__strip-right a {
+  color: #fff;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 120ms ease, opacity 120ms ease;
+  opacity: 0.85;
+}
+.site-footer__strip-right a:hover,
+.site-footer__strip-right a:focus {
+  opacity: 1;
+  border-bottom-color: var(--cta);
+  color: #fff;
+}
+
 @media (max-width: 560px) {
   .site-footer__inner { padding-top: 22px; padding-bottom: 22px; }
-  .site-footer__motto { font-size: 0.98rem; }
+  .site-footer__motto { font-size: 1rem; }
   .site-footer__meta  { font-size: 0.78rem; }
+  .site-footer__strip-inner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+  .site-footer__strip-right { flex-wrap: wrap; gap: 14px; }
 }
 
 /* Typography — Roboto Condensed uppercase headings match parent site */
@@ -433,7 +572,20 @@ h1, h2, h3, h4, h5, h6 {
 h1 { margin: 0 0 0.5rem; font-size: 1.75rem; }
 h2 { margin: 1.25rem 0 0.5rem; font-size: 1.2rem; }
 
-.hero h1 { margin-bottom: 0.75rem; }
+.hero h1 {
+  margin-bottom: 0.75rem;
+  /* Sentence case on the hero — this is the warm, human line that
+     donors read first. Uppercase is reserved for eyebrows and section
+     headings below. Slightly larger and tighter than the h1 default. */
+  text-transform: none;
+  letter-spacing: -0.3px;
+  font-size: 2rem;
+  line-height: 1.2;
+  font-family: 'Poppins', sans-serif;
+}
+@media (max-width: 560px) {
+  .hero h1 { font-size: 1.55rem; }
+}
 .lede {
   color: var(--ink);
   font-size: 1.05rem;
@@ -522,9 +674,29 @@ small, .fineprint {
   font-size: 0.85rem;
 }
 
-/* Frequency radios — mirror the preset pattern so it feels like the same
-   language. Three equal-width buttons: One-time / Monthly / Yearly. */
-.frequency-group { }
+/* Frequency radios — three equal-width tile buttons (One-time / Monthly /
+   Yearly) that mirror the preset pattern. The whole fieldset wears a gold
+   accent border + legend so it stands out as the primary decision above
+   the amount picker: donors should notice "wait, I can give monthly" on
+   first glance, not discover it after scrolling. */
+/* Gold border has to beat `.donation-form fieldset` specificity (0,1,1),
+   so we scope with .donation-form.  */
+.donation-form .frequency-group {
+  border: 2px solid var(--gold);
+  background: var(--gold-soft);
+  box-shadow: 0 1px 0 rgba(201, 162, 39, 0.18);
+}
+.donation-form .frequency-group legend {
+  background: var(--gold);
+  color: #fff;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-family: 'Roboto Condensed', 'Poppins', sans-serif;
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
 .frequency {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -540,25 +712,32 @@ small, .fineprint {
 .frequency__opt span {
   display: block;
   text-align: center;
-  padding: 0.7rem 0.5rem;
+  padding: 0.75rem 0.5rem;
   background: #fff;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--gold);
   border-radius: var(--radius-sm);
   font-weight: 600;
   color: var(--ink);
   cursor: pointer;
-  transition: border-color 120ms, background 120ms, color 120ms;
+  transition: border-color 120ms, background 120ms, color 120ms, box-shadow 120ms;
 }
-.frequency__opt:hover span { border-color: var(--brand); }
+.frequency__opt:hover span {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.18);
+}
 .frequency__opt input:checked + span {
-  background: var(--brand);
-  border-color: var(--brand);
+  background: var(--gold);
+  border-color: var(--gold);
   color: #fff;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
 }
 .frequency__opt input:focus-visible + span {
   outline: 2px solid var(--cta);
   outline-offset: 2px;
 }
+/* Small descriptive caption below the tiles keeps the ink-strong color so
+   it doesn't wash out against the gold tint. */
+.frequency-group small { color: var(--body); }
 
 /* Success-page "you started a recurring donation" block */
 .recurring-note {
@@ -593,24 +772,40 @@ small, .fineprint {
 .preset span {
   display: block;
   text-align: center;
-  padding: 0.85rem 0.5rem;
+  padding: 0.9rem 0.5rem;
   background: #fff;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--ink);
   cursor: pointer;
-  transition: border-color 120ms, background 120ms, color 120ms;
+  box-shadow: 0 1px 2px rgba(32, 42, 48, 0.04);
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    color 140ms ease,
+    box-shadow 160ms ease,
+    transform 120ms cubic-bezier(.2,.7,.2,1);
 }
-.preset:hover span { border-color: var(--brand); }
+.preset:hover span {
+  border-color: var(--brand);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(98, 59, 153, 0.15);
+}
+.preset:active span {
+  transform: translateY(0);
+  transition-duration: 60ms;
+}
 .preset input:checked + span {
   background: var(--brand);
   border-color: var(--brand);
   color: #fff;
+  box-shadow: 0 4px 10px rgba(98, 59, 153, 0.25);
 }
 .preset input:focus-visible + span {
-  outline: 2px solid var(--cta);
-  outline-offset: 2px;
+  outline: none;
+  border-color: var(--cta);
+  box-shadow: 0 0 0 3px rgba(250, 92, 30, 0.25);
 }
 
 .amount-label { margin-top: 0.25rem; }
@@ -653,31 +848,52 @@ small, .fineprint {
   font-size: 0.95rem;
 }
 
-/* Buttons — primary is orange CTA (parent site convention), secondary is purple outline */
+/* Buttons — primary is orange CTA (parent site convention), secondary is purple outline.
+   Primary adds a real shadow + slight lift on hover so the CTA reads as
+   the clear action, not just a colored rectangle. */
 .btn {
   display: inline-block;
-  padding: 0.85rem 1.4rem;
+  padding: 0.9rem 1.5rem;
   border: 0;
   border-radius: var(--radius-sm);
-  font-size: 0.95rem;
+  font-size: 0.98rem;
   font-weight: 700;
   font-family: 'Roboto Condensed', 'Poppins', sans-serif;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 1.2px;
   cursor: pointer;
   text-decoration: none;
-  transition: background 160ms, color 160ms, border-color 160ms, transform 80ms;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 180ms ease,
+    transform 140ms cubic-bezier(.2,.7,.2,1);
 }
-.btn:active { transform: translateY(1px); }
+.btn:active { transform: translateY(1px); transition-duration: 60ms; }
 
 .btn--primary {
   background: var(--cta);
   color: #fff;
   border: 1px solid var(--cta);
+  box-shadow: 0 2px 6px rgba(250, 92, 30, 0.25);
 }
 .btn--primary:hover {
-  background: transparent;
-  color: var(--cta);
+  background: var(--cta-hover);
+  color: #fff;
+  border-color: var(--cta-hover);
+  box-shadow: 0 6px 16px rgba(250, 92, 30, 0.35);
+  transform: translateY(-2px);
+}
+.btn--primary:active {
+  background: var(--cta-hover);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(250, 92, 30, 0.25);
+  transform: translateY(0);
+}
+.btn--primary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(250, 92, 30, 0.35), 0 6px 16px rgba(250, 92, 30, 0.30);
 }
 
 .btn--secondary {
@@ -688,6 +904,12 @@ small, .fineprint {
 .btn--secondary:hover {
   background: var(--brand);
   color: #fff;
+  box-shadow: 0 4px 12px rgba(98, 59, 153, 0.22);
+  transform: translateY(-1px);
+}
+.btn--secondary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(98, 59, 153, 0.25);
 }
 
 button[type="submit"] {
@@ -787,57 +1009,114 @@ a:hover { color: var(--cta); }
 
 /* Impact grid */
 .impact { margin: 1.5rem 0; }
-.impact h2 { margin-bottom: 0.75rem; }
+.impact h2 { margin-bottom: 0.5rem; }
 .impact-grid {
   list-style: none;
   padding: 0;
   margin: 0;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 0.75rem;
+  gap: 1rem;
 }
 .impact__hint {
-  font-size: 0.85rem;
-  margin: 0 0 0.6rem;
+  font-size: 0.88rem;
+  margin: 0 0 0.85rem;
 }
-/* Impact cards are <button> elements so the whole card is a single,
-   keyboard-accessible affordance. Reset button chrome and match the text-
-   alignment / typography of the legacy <li> version. */
+
+/* Impact cards — clickable <button> with real affordance.
+   - Centered layout so the dollar tier reads as a clear "tap me" button,
+     not a paragraph heading.
+   - Always-on lift off the page surface (subtle shadow) so donors see
+     them as cards, not text blocks.
+   - Hover raises the card 3px and pops the shadow + purple border.
+   - Active pushes it back down so a click physically registers.
+   - Default ($100) tier wears a permanent purple halo + a small "most
+     donors" ribbon, anchoring the anchor.
+   - On touch devices (no :hover), the always-on shadow + shrink on
+     :active is the entire feedback loop. */
 .impact-card {
-  display: block;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
   width: 100%;
-  text-align: left;
   background: #fff;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0.9rem 1rem;
+  border-radius: var(--radius);
+  padding: 1.1rem 0.9rem 1rem;
   font: inherit;
   color: inherit;
   cursor: pointer;
-  transition: box-shadow 200ms, border-color 200ms, transform 120ms;
+  box-shadow: 0 1px 2px rgba(32, 42, 48, 0.06);
+  transition:
+    transform 180ms cubic-bezier(.2,.7,.2,1),
+    box-shadow 180ms ease,
+    border-color 180ms ease;
 }
 .impact-card:hover {
-  box-shadow: 2px 2px 5px 0 rgba(0, 0, 0, 0.12);
+  transform: translateY(-3px);
   border-color: var(--brand);
+  box-shadow: 0 8px 18px rgba(98, 59, 153, 0.16);
 }
-.impact-card:active { transform: translateY(1px); }
+.impact-card:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(98, 59, 153, 0.10);
+  transition-duration: 60ms;
+}
 .impact-card:focus-visible {
   outline: none;
   border-color: var(--cta);
-  box-shadow: 0 0 0 3px rgba(250, 92, 30, 0.25);
+  box-shadow: 0 0 0 3px rgba(250, 92, 30, 0.25), 0 8px 18px rgba(250, 92, 30, 0.18);
 }
 .impact-card--default {
   border-color: var(--brand);
-  box-shadow: 0 0 0 2px rgba(98, 59, 153, 0.12);
+  box-shadow: 0 0 0 2px rgba(98, 59, 153, 0.14), 0 4px 12px rgba(98, 59, 153, 0.10);
+}
+/* "Most donors" ribbon on the default tier — gives the anchor a reason
+   to be the anchor. Positioned at the top edge, centered horizontally. */
+.impact-card--default::before {
+  content: "Most donors";
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--brand);
+  color: #fff;
+  font-family: 'Roboto Condensed', 'Poppins', sans-serif;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 999px;
+  box-shadow: 0 2px 4px rgba(98, 59, 153, 0.25);
 }
 .impact-card__amount {
   color: var(--brand);
   font-family: 'Roboto Condensed', sans-serif;
   font-weight: 700;
-  font-size: 1.4rem;
-  margin-bottom: 0.25rem;
+  font-size: 1.75rem;
+  line-height: 1;
+  margin-bottom: 0.5rem;
+  letter-spacing: 0.5px;
 }
-.impact-card p { margin: 0; font-size: 0.92rem; }
+.impact-card p {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--body);
+  line-height: 1.45;
+}
+/* Selected state — when the donor clicks a card the matching preset
+   radio gets :checked; we mirror that here via a sibling lookup so the
+   card itself shows "this is your current pick". Implemented via a
+   JS-set data attribute so we don't need cross-DOM CSS plumbing. */
+.impact-card[data-selected="true"] {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  box-shadow: 0 0 0 2px var(--brand), 0 4px 12px rgba(98, 59, 153, 0.20);
+}
+.impact-card[data-selected="true"] .impact-card__amount { color: var(--brand-hover); }
 
 /* Newsletter opt-in — sits below the email field, same fieldset */
 .email-optin {
@@ -845,37 +1124,6 @@ a:hover { color: var(--cta); }
   font-size: 0.92rem;
   color: var(--body);
 }
-
-/* Allocation bars */
-.allocation { margin: 1.5rem 0; }
-.allocation h2 { margin-bottom: 0.5rem; }
-.allocation-bars {
-  list-style: none;
-  padding: 0;
-  margin: 1rem 0 0;
-}
-.allocation-bars li + li { margin-top: 0.75rem; }
-.allocation-bars__label {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.9rem;
-  margin-bottom: 0.25rem;
-}
-.allocation-bars__label strong { color: var(--brand); font-variant-numeric: tabular-nums; }
-.allocation-bars__track {
-  height: 8px;
-  background: #efe8f7;
-  border-radius: 999px;
-  overflow: hidden;
-}
-.allocation-bars__fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--brand), var(--brand-deep));
-  border-radius: 999px;
-}
-.allocation-bars__fill--78 { width: 78%; }
-.allocation-bars__fill--17 { width: 17%; }
-.allocation-bars__fill--5  { width: 5%; }
 
 /* Tax note, other-ways, stay-connected, amplify, contact-help */
 .tax-note,
@@ -1033,9 +1281,8 @@ a:hover { color: var(--cta); }
   main.container > .notice       { order: 2; }
   main.container > .donation-form{ order: 3; }
   main.container > .impact       { order: 4; }
-  main.container > .allocation   { order: 5; }
-  main.container > .tax-note     { order: 6; }
-  main.container > .other-ways   { order: 7; }
+  main.container > .tax-note     { order: 5; }
+  main.container > .other-ways   { order: 6; }
 }
 
 /* ——— Conversion patch 2: error notice, fee deltas, submit feedback ——— */

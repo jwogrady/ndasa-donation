@@ -139,30 +139,6 @@ ob_start();
   </ul>
 </section>
 
-<section class="allocation" aria-labelledby="allocation-heading">
-  <h2 id="allocation-heading">Where your donation goes</h2>
-  <p class="muted">
-    <!-- {{PLACEHOLDER: replace with real audited allocation from annual report}} -->
-    Every dollar is directed toward programs and grants, with minimal overhead.
-    The NDASA Foundation is governed by a volunteer board of trustees and
-    publishes its financials annually.
-  </p>
-  <ul class="allocation-bars">
-    <li>
-      <div class="allocation-bars__label"><span>Scholarships &amp; grants</span><strong>78%</strong></div>
-      <div class="allocation-bars__track"><div class="allocation-bars__fill allocation-bars__fill--78"></div></div>
-    </li>
-    <li>
-      <div class="allocation-bars__label"><span>Education &amp; outreach</span><strong>17%</strong></div>
-      <div class="allocation-bars__track"><div class="allocation-bars__fill allocation-bars__fill--17"></div></div>
-    </li>
-    <li>
-      <div class="allocation-bars__label"><span>Administration</span><strong>5%</strong></div>
-      <div class="allocation-bars__track"><div class="allocation-bars__fill allocation-bars__fill--5"></div></div>
-    </li>
-  </ul>
-</section>
-
 <form class="donation-form" method="post" action="<?= Html::h(NDASA_BASE_PATH) ?>/checkout" novalidate>
   <input type="hidden" name="<?= Html::h(Csrf::FIELD) ?>" value="<?= Html::h($csrf) ?>">
 
@@ -442,16 +418,34 @@ ob_start();
   });
 
   // Impact card click -> select matching preset, scroll form into view,
-  // update the total preview. Preserves the emotional commitment moment so
-  // the donor doesn't have to re-pick the amount they just decided on.
-  document.querySelectorAll('[data-impact-amount]').forEach((card) => {
+  // update the total preview, and visually mark the chosen card. Preserves
+  // the emotional commitment moment so the donor doesn't have to re-pick
+  // the amount they just decided on.
+  const impactCards = document.querySelectorAll('[data-impact-amount]');
+
+  const markImpactSelected = (value) => {
+    impactCards.forEach((c) => {
+      c.dataset.selected = (c.getAttribute('data-impact-amount') === value) ? 'true' : 'false';
+    });
+  };
+
+  impactCards.forEach((card) => {
     card.addEventListener('click', () => {
       const v = card.getAttribute('data-impact-amount');
       const match = Array.from(presets).find((p) => p.value === v);
       if (match) match.checked = true;
       amount.value = v;
+      markImpactSelected(v);
       updateAll();
       form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  // Keep impact-card selected state in sync when the donor picks from the
+  // preset row in the form itself — otherwise the card glow goes stale.
+  presets.forEach((p) => {
+    p.addEventListener('change', () => {
+      markImpactSelected(p.value);
     });
   });
 
