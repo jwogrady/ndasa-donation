@@ -444,6 +444,9 @@ a:hover { color: var(--brand-hover); }
   background: linear-gradient(90deg, var(--brand), #4a6cd4);
   border-radius: 999px;
 }
+.allocation-bars__fill--78 { width: 78%; }
+.allocation-bars__fill--17 { width: 17%; }
+.allocation-bars__fill--5  { width: 5%; }
 
 /* Tax note, other-ways, stay-connected, contact-help */
 .tax-note,
@@ -551,4 +554,36 @@ a:hover { color: var(--brand-hover); }
   h1 { font-size: 1.35rem; }
   .site-header__sub { display: none; }
   .status { flex-direction: column; gap: 0.5rem; }
+}
+
+/* ——— Conversion patch 2: error notice, fee deltas, submit feedback ——— */
+
+.notice--error {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.fees__delta,
+.fees__delta-amount {
+  font-weight: 600;
+  color: var(--brand);
+}
+
+.spinner {
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  margin-right: 0.35em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -2px;
+  animation: ndasa-spin 0.7s linear infinite;
+}
+@keyframes ndasa-spin { to { transform: rotate(360deg); } }
+
+button[type="submit"][disabled] {
+  opacity: 0.75;
+  cursor: progress;
 }

@@ -19,13 +19,21 @@ If a donor types a custom amount that matches a preset (for example, `100`), the
 
 ## Covering processing fees
 
-Below the amount field, donors can choose **"Yes, I'll cover the fee"** or **"No thanks"**. When **Yes** is selected, the application computes a new total so that after Stripe's standard US card fee (2.9% plus $0.30), the foundation receives the donor's intended amount in full.
+Below the amount field, donors see a short explanation that card fees take a small amount out of each donation, with the exact dollar figure shown live next to the choice:
+
+> Card fees take about $3.30 out of each donation. If you'd like, add it so 100% of your gift funds our programs.
+
+The two choices are **"Yes, I'll add $3.30"** (the amount updates as the donation amount changes) and **"No thanks"**. When **Yes** is selected, the application computes a new total so that after Stripe's standard US card fee, the foundation receives the donor's intended amount in full.
 
 A live preview below the button shows exactly what the donor's card will be charged, for example:
 
-> Your card will be charged $103.19 so we receive $100.00 after fees.
+> Your card will be charged $103.30 so we receive $100.00 after fees.
 
 This preview is informational; the final amount shown on Stripe's checkout page is authoritative, and the two always agree.
+
+## The donate button
+
+The submit button reflects the donor's current amount in real time &mdash; for example, **"Donate $100.00 securely →"**. When no valid amount is selected the button reads **"Choose an amount above"** so the next action is always clear. After the donor clicks the button, it changes to **"Redirecting to secure checkout…"** while the payment session is created, so there is no ambiguity about whether the click registered.
 
 ## Proceeding to Stripe
 

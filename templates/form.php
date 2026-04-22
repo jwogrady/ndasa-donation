@@ -7,11 +7,19 @@
  */
 
 use NDASA\Http\Csrf;
+use NDASA\Payment\FeeCalculator;
 use NDASA\Support\Html;
 
 $values  ??= [];
 $error   ??= null;
 $canceled ??= false;
+
+// Donation bounds from env, converted to dollars so the HTML5 input min/max
+// and the JS preview read the same numbers as AmountValidator on the server.
+$minCents = (int) ($_ENV['DONATION_MIN_CENTS'] ?? 1000);
+$maxCents = (int) ($_ENV['DONATION_MAX_CENTS'] ?? 1_000_000);
+$minDollars = number_format($minCents / 100, 2, '.', '');
+$maxDollars = number_format($maxCents / 100, 2, '.', '');
 
 // Resolve the preset to select and the amount to prefill. On a fresh render
 // the default tier is $100 (anchors the donor toward a considered gift
@@ -112,20 +120,20 @@ ob_start();
   <ul class="allocation-bars">
     <li>
       <div class="allocation-bars__label"><span>Scholarships &amp; grants</span><strong>78%</strong></div>
-      <div class="allocation-bars__track"><div class="allocation-bars__fill" style="width:78%"></div></div>
+      <div class="allocation-bars__track"><div class="allocation-bars__fill allocation-bars__fill--78"></div></div>
     </li>
     <li>
       <div class="allocation-bars__label"><span>Education &amp; outreach</span><strong>17%</strong></div>
-      <div class="allocation-bars__track"><div class="allocation-bars__fill" style="width:17%"></div></div>
+      <div class="allocation-bars__track"><div class="allocation-bars__fill allocation-bars__fill--17"></div></div>
     </li>
     <li>
       <div class="allocation-bars__label"><span>Administration</span><strong>5%</strong></div>
-      <div class="allocation-bars__track"><div class="allocation-bars__fill" style="width:5%"></div></div>
+      <div class="allocation-bars__track"><div class="allocation-bars__fill allocation-bars__fill--5"></div></div>
     </li>
   </ul>
 </section>
 
-<form class="donation-form" method="post" action="/checkout" novalidate>
+<form class="donation-form" method="post" action="<?= Html::h(NDASA_BASE_PATH) ?>/checkout" novalidate>
   <input type="hidden" name="<?= Html::h(Csrf::FIELD) ?>" value="<?= Html::h($csrf) ?>">
 
   <fieldset class="amount-group">
@@ -156,8 +164,8 @@ ob_start();
         type="number"
         id="amount"
         name="amount"
-        min="10"
-        max="10000"
+        min="<?= Html::h($minDollars) ?>"
+        max="<?= Html::h($maxDollars) ?>"
         step="0.01"
         inputmode="decimal"
         autocomplete="off"
@@ -166,7 +174,9 @@ ob_start();
         value="<?= Html::h($amountValue) ?>"
       >
     </div>
-    <small id="amount-help">Minimum $10.00. Maximum $10,000.00 per transaction.</small>
+    <small id="amount-help">
+      Minimum $<?= Html::h($minDollars) ?>. Maximum $<?= Html::h(number_format($maxCents / 100, 0, '.', ',')) ?> per transaction.
+    </small>
   </fieldset>
 
   <fieldset>
@@ -194,15 +204,16 @@ ob_start();
   </fieldset>
 
   <fieldset class="fees">
-    <legend>Help cover processing fees?</legend>
+    <legend>Cover the processing fee?</legend>
     <p class="fees__note">
-      Card processing costs 2.9% + $0.30 per transaction. Covering it means 100% of
-      your intended gift reaches our programs.
+      Card fees take about <span id="fee-delta" class="fees__delta">a little</span>
+      out of each donation. If you'd like, add it so 100% of your gift funds
+      our programs.
     </p>
     <div class="fees__options">
       <label class="inline">
         <input type="radio" name="cover_fees" value="yes" <?= $coverFeesSticky ? 'checked' : '' ?>>
-        Yes, I'll cover the fee
+        Yes, I'll add <span id="fee-delta-yes" class="fees__delta-amount">the fee</span>
       </label>
       <label class="inline">
         <input type="radio" name="cover_fees" value="no" <?= $coverFeesSticky ? '' : 'checked' ?>>
@@ -213,8 +224,11 @@ ob_start();
 
   <p id="total-preview" class="total-preview" aria-live="polite"></p>
 
-  <button type="submit" class="btn btn--primary">
-    Continue to secure checkout &rarr;
+  <button type="submit" id="donation-submit" class="btn btn--primary"
+    data-label-ready="Donate securely &rarr;"
+    data-label-empty="Choose an amount above"
+    data-label-busy="Redirecting to secure checkout&hellip;">
+    Donate securely &rarr;
   </button>
 
   <p class="fineprint">
@@ -271,11 +285,25 @@ ob_start();
 
 <script nonce="<?= Html::h(defined('NDASA_CSP_NONCE') ? NDASA_CSP_NONCE : '') ?>">
 (() => {
-  const amount  = document.getElementById('amount');
-  const presets = document.querySelectorAll('input[data-preset]');
-  const other   = document.querySelector('input[data-preset][value="other"]');
-  const fees    = document.querySelectorAll('input[name="cover_fees"]');
-  const total   = document.getElementById('total-preview');
+  // Config exposed from PHP so fee math cannot drift between server and
+  // client. Values are literal numbers, not strings — safe to interpolate
+  // inside a nonced script tag.
+  const CFG = {
+    feePercent:    <?= FeeCalculator::PERCENT ?>,
+    feeFixedCents: <?= FeeCalculator::FIXED_CENTS ?>,
+    minCents:      <?= (int) $minCents ?>,
+    maxCents:      <?= (int) $maxCents ?>,
+  };
+
+  const form     = document.querySelector('.donation-form');
+  const amount   = document.getElementById('amount');
+  const presets  = document.querySelectorAll('input[data-preset]');
+  const other    = document.querySelector('input[data-preset][value="other"]');
+  const fees     = document.querySelectorAll('input[name="cover_fees"]');
+  const total    = document.getElementById('total-preview');
+  const feeSpan  = document.getElementById('fee-delta');
+  const feeYes   = document.getElementById('fee-delta-yes');
+  const submit   = document.getElementById('donation-submit');
 
   const fmt = (cents) =>
     '$' + (cents / 100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -283,23 +311,47 @@ ob_start();
   const parseAmount = () => {
     const v = parseFloat(amount.value);
     if (!isFinite(v) || v <= 0) return 0;
-    return Math.round(v * 100);
+    const cents = Math.round(v * 100);
+    if (cents < CFG.minCents || cents > CFG.maxCents) return 0;
+    return cents;
   };
 
-  const grossUp = (cents) => Math.ceil((cents + 30) / (1 - 0.029));
+  const grossUp = (cents) =>
+    Math.ceil((cents + CFG.feeFixedCents) / (1 - CFG.feePercent));
 
-  const updateTotal = () => {
-    if (!total) return;
+  const updateAll = () => {
     const base = parseAmount();
-    if (base === 0) {
-      total.textContent = 'Enter an amount above to see what your card will be charged.';
-      return;
-    }
     const cover = document.querySelector('input[name="cover_fees"]:checked')?.value === 'yes';
-    const charged = cover ? grossUp(base) : base;
-    total.textContent = cover
-      ? `Your card will be charged ${fmt(charged)} so we receive ${fmt(base)} after fees.`
-      : `Your card will be charged ${fmt(charged)}.`;
+    const delta = base > 0 ? grossUp(base) - base : 0;
+
+    // Fee copy: live dollar amount. When base is 0 we can't compute the
+    // per-donation delta; show a stable approximation ("about $3.50 on $100").
+    if (feeSpan) {
+      feeSpan.textContent = base > 0 ? fmt(delta) : fmt(grossUp(10000) - 10000);
+    }
+    if (feeYes) {
+      feeYes.textContent = base > 0 ? fmt(delta) : 'the fee';
+    }
+
+    // Total preview: confident dollar figure or a stable zero-state.
+    if (total) {
+      if (base === 0) {
+        total.textContent = 'Enter an amount above to see what your card will be charged.';
+      } else {
+        const charged = cover ? grossUp(base) : base;
+        total.textContent = cover
+          ? `Your card will be charged ${fmt(charged)} so we receive ${fmt(base)} after fees.`
+          : `Your card will be charged ${fmt(charged)}.`;
+      }
+    }
+
+    // Dynamic CTA. Shows the donor's *intended* amount (not grossed-up),
+    // which is the number they care about.
+    if (submit && !submit.disabled) {
+      submit.innerHTML = base === 0
+        ? submit.dataset.labelEmpty
+        : `Donate ${fmt(base)} securely &rarr;`;
+    }
   };
 
   // Preset click -> fill amount field.
@@ -310,11 +362,12 @@ ob_start();
       } else {
         amount.value = el.value;
       }
-      updateTotal();
+      updateAll();
     });
   });
 
-  // Typing in amount -> switch radio to "Other".
+  // Typing in amount -> switch radio to "Other" when the value doesn't
+  // match a whole-dollar preset.
   amount.addEventListener('input', () => {
     const val = amount.value;
     const match = Array.from(presets).find(
@@ -325,12 +378,33 @@ ob_start();
     } else if (other) {
       other.checked = true;
     }
-    updateTotal();
+    updateAll();
   });
 
-  fees.forEach((el) => el.addEventListener('change', updateTotal));
+  fees.forEach((el) => el.addEventListener('change', updateAll));
 
-  updateTotal();
+  // Submit feedback: disable the button, swap label, show spinner.
+  // Network latency between /checkout and Stripe Checkout is 300–1500ms on
+  // mobile; this removes the "did I click it?" gap and double-click races.
+  if (form && submit) {
+    form.addEventListener('submit', () => {
+      submit.disabled = true;
+      submit.innerHTML =
+        '<span class="spinner" aria-hidden="true"></span> ' + submit.dataset.labelBusy;
+    });
+  }
+
+  // bfcache restore (back-button from Stripe) — re-enable so the donor
+  // can try again without reloading.
+  window.addEventListener('pageshow', (e) => {
+    if (!submit) return;
+    if (e.persisted) {
+      submit.disabled = false;
+      updateAll();
+    }
+  });
+
+  updateAll();
 })();
 </script>
 <?php
