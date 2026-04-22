@@ -1,4 +1,16 @@
 <?php
+/**
+ * NDASA Donation Platform
+ *
+ * @package    NDASA\Donation
+ * @author     William Cross
+ * @author     John O'Grady <john@status26.com>
+ * @copyright  2026 NDASA Foundation
+ * @license    Proprietary - NDASA Foundation
+ * @link       https://ndasafoundation.org/
+ *
+ * Maintained in honor of William Cross.
+ */
 declare(strict_types=1);
 
 namespace NDASA\Webhook;
@@ -25,10 +37,12 @@ final class WebhookController
 
         try {
             match ($event->type) {
-                'checkout.session.completed'     => $this->onCheckoutCompleted($event->data->object),
-                'charge.refunded'                => $this->onRefund($event->data->object),
-                'payment_intent.payment_failed'  => $this->onPaymentFailed($event->data->object),
-                default                          => null,
+                'checkout.session.completed'               => $this->onCheckoutCompleted($event->data->object),
+                'checkout.session.async_payment_succeeded' => $this->onAsyncPaymentSucceeded($event->data->object),
+                'checkout.session.async_payment_failed'    => $this->onAsyncPaymentFailed($event->data->object),
+                'charge.refunded'                          => $this->onRefund($event->data->object),
+                'payment_intent.payment_failed'            => $this->onPaymentFailed($event->data->object),
+                default                                    => null,
             };
             return true;
         } catch (\Throwable $e) {
@@ -40,10 +54,26 @@ final class WebhookController
     private function onCheckoutCompleted(object $session): void
     {
         if (($session->payment_status ?? '') !== 'paid') {
-            // Async methods may arrive unpaid first; a later event will confirm.
+            // Async methods (ACH, etc.) arrive unpaid first; async_payment_succeeded confirms later.
             return;
         }
+        $this->recordPaidSession($session);
+    }
 
+    private function onAsyncPaymentSucceeded(object $session): void
+    {
+        $this->recordPaidSession($session);
+    }
+
+    private function onAsyncPaymentFailed(object $session): void
+    {
+        $orderId = (string) ($session->client_reference_id ?? '');
+        $sid     = (string) ($session->id ?? '?');
+        error_log("Webhook: async payment failed for session {$sid} (order {$orderId})");
+    }
+
+    private function recordPaidSession(object $session): void
+    {
         $orderId         = (string) ($session->client_reference_id ?? '');
         $paymentIntentId = (string) ($session->payment_intent ?? '');
         $amountCents     = (int)    ($session->amount_total ?? 0);
@@ -53,7 +83,7 @@ final class WebhookController
         $name            = (string) ($session->customer_details->name ?? '');
 
         if ($orderId === '' || $paymentIntentId === '' || $amountCents <= 0 || $email === '') {
-            error_log('Incomplete checkout.session.completed for session ' . ($session->id ?? '?'));
+            error_log('Incomplete paid session ' . ($session->id ?? '?'));
             return;
         }
 

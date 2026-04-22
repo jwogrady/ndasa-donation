@@ -1,4 +1,16 @@
 <?php
+/**
+ * NDASA Donation Platform
+ *
+ * @package    NDASA\Donation
+ * @author     William Cross
+ * @author     John O'Grady <john@status26.com>
+ * @copyright  2026 NDASA Foundation
+ * @license    Proprietary - NDASA Foundation
+ * @link       https://ndasafoundation.org/
+ *
+ * Maintained in honor of William Cross.
+ */
 declare(strict_types=1);
 
 namespace NDASA\Payment;
@@ -21,10 +33,10 @@ final class DonationService
     ): StripeSession {
         return StripeSession::create(
             [
-                'mode'                 => 'payment',
-                'payment_method_types' => ['card'],
-                'customer_email'       => $email,
-                'client_reference_id'  => $orderId,
+                'mode'                      => 'payment',
+                'automatic_payment_methods' => ['enabled' => true],
+                'customer_email'            => $email,
+                'client_reference_id'       => $orderId,
                 'line_items' => [[
                     'price_data' => [
                         'currency'     => self::CURRENCY,

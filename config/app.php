@@ -1,4 +1,16 @@
 <?php
+/**
+ * NDASA Donation Platform
+ *
+ * @package    NDASA\Donation
+ * @author     William Cross
+ * @author     John O'Grady <john@status26.com>
+ * @copyright  2026 NDASA Foundation
+ * @license    Proprietary - NDASA Foundation
+ * @link       https://ndasafoundation.org/
+ *
+ * Maintained in honor of William Cross.
+ */
 declare(strict_types=1);
 
 require_once __DIR__ . '/../vendor/autoload.php';
@@ -18,7 +30,6 @@ $required = [
     'STRIPE_WEBHOOK_SECRET',
     'APP_URL',
     'DB_PATH',
-    'SMTP_DSN',
     'MAIL_FROM',
     'MAIL_BCC_INTERNAL',
 ];
@@ -28,6 +39,12 @@ foreach ($required as $key) {
         error_log("NDASA: missing required env var {$key}");
         exit('Server misconfigured.');
     }
+}
+// SMTP: accept either a pre-formed DSN or discrete components (host is sufficient).
+if (empty($_ENV['SMTP_DSN']) && empty($_ENV['SMTP_HOST'])) {
+    http_response_code(500);
+    error_log('NDASA: SMTP not configured (set SMTP_DSN or SMTP_HOST/SMTP_PORT/SMTP_USERNAME/SMTP_PASSWORD)');
+    exit('Server misconfigured.');
 }
 
 date_default_timezone_set($_ENV['APP_TIMEZONE'] ?? 'UTC');
