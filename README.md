@@ -39,6 +39,13 @@ php -S 127.0.0.1:8000 -t public    # then open http://127.0.0.1:8000/
 
 This will give you the donation form. To actually create a Checkout session you will need Stripe test-mode keys in `.env` &mdash; see [docs/ADMIN.md](docs/ADMIN.md) for full configuration, or [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for the local-development workflow.
 
+## Admin
+
+- URL: `/admin`
+- Protected by HTTP Basic Auth.
+- Credentials are set via `ADMIN_USER` and `ADMIN_PASS` in `.env`.
+- A minimal config editor at `/admin/config` can update the Stripe keys, `APP_URL`, and `MAIL_BCC_INTERNAL`. A PHP-FPM reload may be required for changes to take full effect.
+
 ## Authors
 
 - **William Cross** &mdash; Original Author. Established the initial donation application and the foundational work that this platform continues.

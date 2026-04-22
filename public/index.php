@@ -15,6 +15,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../config/app.php';
 
+use NDASA\Admin\Auth as AdminAuth;
+use NDASA\Admin\EnvFile;
 use NDASA\Http\ClientIp;
 use NDASA\Http\Csrf;
 use NDASA\Http\RateLimiter;
@@ -38,11 +40,20 @@ if ($basePath !== '' && str_starts_with($path, $basePath)) {
     $path = substr($path, strlen($basePath)) ?: '/';
 }
 
+// Every /admin* request goes through one auth gate. On failure the gate
+// terminates the request with 401 (or 500 if ADMIN_USER/ADMIN_PASS is unset).
+if ($path === '/admin' || str_starts_with($path, '/admin/')) {
+    AdminAuth::require($_SERVER, $_ENV);
+}
+
 try {
     match (true) {
-        $method === 'GET'  && $path === '/'        => render_form(),
+        $method === 'GET'  && $path === '/'              => render_form(),
         $method === 'POST' && ($path === '/checkout' || $path === '/') => handle_checkout(),
-        $method === 'GET'  && $path === '/success' => render_success(),
+        $method === 'GET'  && $path === '/success'       => render_success(),
+        $method === 'GET'  && $path === '/admin'         => render_admin_dashboard(),
+        $method === 'GET'  && $path === '/admin/config'  => render_admin_config(),
+        $method === 'POST' && $path === '/admin/config'  => handle_admin_config(),
         default => not_found(),
     };
 } catch (\Throwable $e) {
@@ -144,6 +155,82 @@ function not_found(): void
 {
     http_response_code(404);
     render_error('Not found.');
+}
+
+// ————————————————————————————————————————————————————————————————
+//  Admin routes
+//  Auth is applied upstream in the main dispatch block; these handlers
+//  can assume the caller is authenticated.
+// ————————————————————————————————————————————————————————————————
+
+/** @return list<string> Editable .env keys exposed in the admin config form. */
+function admin_editable_keys(): array
+{
+    return [
+        'STRIPE_SECRET_KEY',
+        'STRIPE_WEBHOOK_SECRET',
+        'APP_URL',
+        'MAIL_BCC_INTERNAL',
+    ];
+}
+
+function render_admin_dashboard(): void
+{
+    require __DIR__ . '/../templates/admin/dashboard.php';
+}
+
+function render_admin_config(?string $flashOk = null, ?string $flashErr = null): void
+{
+    $fields = admin_editable_keys();
+
+    $envPath = dirname(__DIR__) . '/.env';
+    $stored  = (new EnvFile($envPath))->read();
+
+    // Prefer live env (may reflect host-injected overrides) over file contents.
+    $values = [];
+    foreach ($fields as $k) {
+        $values[$k] = (string) ($_ENV[$k] ?? $stored[$k] ?? '');
+    }
+
+    $descriptions = [
+        'STRIPE_SECRET_KEY'     => 'Stripe live-mode secret key (sk_live_...). Test-mode keys start with sk_test_.',
+        'STRIPE_WEBHOOK_SECRET' => 'Signing secret (whsec_...) from the webhook endpoint in the Stripe dashboard.',
+        'APP_URL'               => 'Public origin of the donation app, including any subpath (e.g. https://ndasafoundation.org/donation).',
+        'MAIL_BCC_INTERNAL'     => 'Address that receives a notification email for each completed donation.',
+    ];
+
+    require __DIR__ . '/../templates/admin/config.php';
+}
+
+function handle_admin_config(): void
+{
+    $fields  = admin_editable_keys();
+    $updates = [];
+
+    foreach ($fields as $k) {
+        $v = (string) ($_POST[$k] ?? '');
+        $v = trim($v);
+        if ($v === '') {
+            render_admin_config(flashErr: "{$k} cannot be empty.");
+            return;
+        }
+        if (preg_match('/[\r\n]/', $v)) {
+            render_admin_config(flashErr: "{$k} contains an invalid character.");
+            return;
+        }
+        $updates[$k] = $v;
+    }
+
+    $envPath = dirname(__DIR__) . '/.env';
+    try {
+        (new EnvFile($envPath))->update($updates);
+    } catch (\Throwable $e) {
+        error_log('Admin config write failed: ' . $e->getMessage());
+        render_admin_config(flashErr: 'Could not save changes: ' . $e->getMessage());
+        return;
+    }
+
+    render_admin_config(flashOk: 'Saved. A PHP-FPM reload may be required for changes to take effect.');
 }
 
 /**
