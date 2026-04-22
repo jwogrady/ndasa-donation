@@ -5,9 +5,40 @@ $title = 'Thank you — NDASA Foundation';
 
 ob_start();
 ?>
+<?php if ($paymentStatus === 'paid'): ?>
+<div class="gratitude" aria-hidden="true">
+  <div class="gratitude__radiance"></div>
+  <svg class="gratitude__heart" viewBox="0 0 120 108" width="120" height="108" role="presentation">
+    <defs>
+      <linearGradient id="gratitude-fill" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%"  stop-color="#9b73d4" />
+        <stop offset="65%" stop-color="#623b99" />
+        <stop offset="100%" stop-color="#fa5c1e" />
+      </linearGradient>
+      <linearGradient id="gratitude-stroke" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%"  stop-color="#623b99" />
+        <stop offset="100%" stop-color="#fa5c1e" />
+      </linearGradient>
+    </defs>
+    <!-- Heart path: classic two-arc with a 60,108 apex, anchored to the
+         120x108 viewBox. stroke-dasharray is set via CSS so the outline
+         draws in during the first-view animation. -->
+    <path class="gratitude__heart-path"
+          d="M60 100
+             C 8 68, 0 34, 22 14
+             C 38 0, 56 6, 60 26
+             C 64 6, 82 0, 98 14
+             C 120 34, 112 68, 60 100 Z"
+          fill="url(#gratitude-fill)"
+          stroke="url(#gratitude-stroke)"
+          stroke-width="2"
+          stroke-linejoin="round"/>
+  </svg>
+</div>
+<?php endif; ?>
+
 <section class="status status--<?= $paymentStatus === 'paid' ? 'ok' : 'pending' ?>">
   <?php if ($paymentStatus === 'paid'): ?>
-    <svg class="status__icon" aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
     <div>
       <h1>Thank you for your support</h1>
       <p class="lede">

@@ -121,34 +121,241 @@ body {
 
 main { flex: 1; width: 100%; }
 
-/* Site chrome */
+/* Site chrome — mint-aqua band matches the parent site (ndasafoundation.org)
+   so the donation page reads as a continuation of the same brand. The thin
+   orange underline is our "you're in the donation flow" cue, distinct from
+   the parent without departing from the palette. */
 .site-header {
-  background: #fff;
-  border-bottom: 1px solid var(--border);
+  background: #d8f3f0;
+  background-image: linear-gradient(180deg, #e2f7f4 0%, #d0ece9 100%);
+  border-bottom: 3px solid var(--cta);
+  box-shadow: 0 1px 0 rgba(98, 59, 153, 0.12);
+}
+.site-header__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding-top: 18px;
+  padding-bottom: 18px;
+  margin-top: 0;
+  margin-bottom: 0;
 }
 .site-header__brand {
   display: inline-flex;
   align-items: center;
-  color: var(--ink-strong);
+  gap: 16px;
+  color: var(--brand);
   text-decoration: none;
 }
 .site-header__logo {
   display: block;
   width: auto;
-  height: 64px;
+  height: 72px;
   max-width: 100%;
+  filter: drop-shadow(0 1px 2px rgba(98, 59, 153, 0.18));
+}
+.site-header__wordmark {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+.site-header__name {
+  font-family: 'Roboto Condensed', 'Poppins', sans-serif;
+  font-weight: 700;
+  font-size: 1.85rem;
+  letter-spacing: 0.5px;
+  color: var(--brand);
+  text-transform: none;
+}
+.site-header__section {
+  font-family: 'Poppins', sans-serif;
+  font-size: 0.72rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #4a4a4a;
+  margin-top: 4px;
+}
+/* Rotating donor slogan — sits where a nav would, anchors the donation page
+   to the mission. Three animation modes cycle randomly per advance:
+   fade (calm), drift (gentle rise), and reveal (underline wipe). All motion
+   is suppressed under prefers-reduced-motion. */
+.slogan {
+  position: relative;
+  text-align: right;
+  font-family: 'Poppins', sans-serif;
+  font-size: 1.05rem;
+  font-style: italic;
+  color: var(--brand);
+  line-height: 1.4;
+  max-width: 26ch;
+  padding-bottom: 6px;
+  min-height: 3.1em; /* reserve space so layout doesn't jitter between slogans */
+}
+.slogan__lead {
+  display: block;
+  font-style: normal;
+  font-weight: 700;
+  font-family: 'Roboto Condensed', 'Poppins', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  color: var(--cta);
+  font-size: 0.78rem;
+  margin-bottom: 2px;
+}
+.slogan__body {
+  display: block;
+}
+.slogan__rule {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  width: 0;
+  background: linear-gradient(90deg,
+    rgba(98, 59, 153, 0) 0%,
+    rgba(98, 59, 153, 0.6) 30%,
+    rgba(250, 92, 30, 0.8) 100%);
+  pointer-events: none;
 }
 
-.site-footer {
-  border-top: 1px solid var(--border);
-  margin-top: 2rem;
-  padding: 1rem 0;
-  background: #fff;
+/* Shared transition scaffolding. Each mode toggles a specific exit/enter
+   shape on top of the common timing. */
+.slogan.is-fade   .slogan__lead,
+.slogan.is-fade   .slogan__body,
+.slogan.is-drift  .slogan__lead,
+.slogan.is-drift  .slogan__body,
+.slogan.is-reveal .slogan__lead,
+.slogan.is-reveal .slogan__body {
+  transition:
+    opacity 500ms cubic-bezier(.2,.6,.2,1),
+    transform 700ms cubic-bezier(.2,.6,.2,1);
+  will-change: opacity, transform;
 }
-.site-footer p {
+
+/* FADE — opacity only, calm baseline. */
+.slogan.is-fade.is-out .slogan__lead,
+.slogan.is-fade.is-out .slogan__body { opacity: 0; }
+.slogan.is-fade.is-in  .slogan__lead,
+.slogan.is-fade.is-in  .slogan__body { opacity: 1; }
+
+/* DRIFT — body rises 8px into place, lead follows with a 120ms delay. */
+.slogan.is-drift.is-out .slogan__lead { opacity: 0; transform: translateY(-4px); }
+.slogan.is-drift.is-out .slogan__body { opacity: 0; transform: translateY(4px); }
+.slogan.is-drift.is-in  .slogan__lead { opacity: 1; transform: translateY(0); transition-delay: 120ms; }
+.slogan.is-drift.is-in  .slogan__body { opacity: 1; transform: translateY(0); }
+
+/* REVEAL — the hairline rule wipes right-to-left under the body, then the
+   text crossfades in against the trailing purple gradient. Editorial feel. */
+.slogan.is-reveal .slogan__rule {
+  transition: width 700ms cubic-bezier(.2,.6,.2,1), opacity 500ms linear;
+  opacity: 0;
+  will-change: width, opacity;
+}
+.slogan.is-reveal.is-out .slogan__lead,
+.slogan.is-reveal.is-out .slogan__body { opacity: 0; }
+.slogan.is-reveal.is-out .slogan__rule { width: 0; opacity: 0; }
+.slogan.is-reveal.is-in  .slogan__lead,
+.slogan.is-reveal.is-in  .slogan__body { opacity: 1; transition-delay: 200ms; }
+.slogan.is-reveal.is-in  .slogan__rule { width: 100%; opacity: 0.9; }
+
+@media (prefers-reduced-motion: reduce) {
+  .slogan .slogan__lead,
+  .slogan .slogan__body,
+  .slogan .slogan__rule {
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    width: 0 !important;
+  }
+}
+@media (max-width: 720px) {
+  .site-header__inner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+  .slogan {
+    text-align: left;
+    font-size: 0.95rem;
+    max-width: 100%;
+    min-height: 2.8em;
+  }
+  .slogan__rule { left: 0; right: auto; }
+  .site-header__logo  { height: 56px; }
+  .site-header__name  { font-size: 1.5rem; }
+}
+@media (max-width: 420px) {
+  .site-header__brand { gap: 12px; }
+  .site-header__logo  { height: 48px; }
+  .site-header__name  { font-size: 1.3rem; }
+  .site-header__section { font-size: 0.65rem; }
+}
+
+/* Site footer — mirrors the header's mint-and-orange palette so the page
+   feels bookended. Darker mint at the bottom gives gravity; the orange rule
+   at the top is the exact same 3px stroke that closes the header. */
+.site-footer {
+  margin-top: 3rem;
+  background: linear-gradient(180deg, #c6e8e4 0%, #b4ddd8 100%);
+  border-top: 3px solid var(--cta);
+  box-shadow: 0 -1px 0 rgba(98, 59, 153, 0.12);
+  color: var(--ink);
+}
+.site-footer__inner {
+  padding-top: 28px;
+  padding-bottom: 28px;
+  text-align: center;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+.site-footer__tagline {
+  margin: 0 0 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  line-height: 1.35;
+}
+.site-footer__eyebrow {
+  font-family: 'Roboto Condensed', 'Poppins', sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  color: var(--cta);
+  font-size: 0.78rem;
+}
+.site-footer__motto {
+  font-family: 'Poppins', sans-serif;
+  font-style: italic;
+  color: var(--brand);
+  font-size: 1.05rem;
+  max-width: 42ch;
+}
+.site-footer__meta {
   margin: 0;
-  color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
+  color: #3b4248;
+  letter-spacing: 0.1px;
+}
+.site-footer__link {
+  color: var(--brand);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+.site-footer__link:hover,
+.site-footer__link:focus {
+  color: var(--brand-hover);
+  border-bottom-color: currentColor;
+}
+
+@media (max-width: 560px) {
+  .site-footer__inner { padding-top: 22px; padding-bottom: 22px; }
+  .site-footer__motto { font-size: 0.98rem; }
+  .site-footer__meta  { font-size: 0.78rem; }
 }
 
 /* Typography — Roboto Condensed uppercase headings match parent site */
@@ -628,7 +835,6 @@ a:hover { color: var(--cta); }
   .presets { grid-template-columns: repeat(2, 1fr); }
   .impact-grid { grid-template-columns: 1fr; }
   h1 { font-size: 1.5rem; }
-  .site-header__logo { height: 52px; }
   .status { flex-direction: column; gap: 0.5rem; }
 }
 
@@ -757,3 +963,88 @@ button[type="submit"][disabled] {
 /* When test mode is active, nudge the site-header down so the banner
    sits cleanly above it. */
 body.is-test-mode .site-header { border-top: none; }
+
+/* ————————————————————————————————————————————————————————
+   Gratitude moment — donation success page only
+   A one-time intro (outline draw → fill reveal → radiance) that plays on
+   page load, followed by a gentle 6-second breathing loop. Quiet warmth,
+   not confetti — appropriate for a charitable-gift confirmation.
+   ———————————————————————————————————————————————————————— */
+.gratitude {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  margin: 1.75rem auto 1rem;
+  display: grid;
+  place-items: center;
+}
+.gratitude__heart {
+  position: relative;
+  z-index: 2;
+  display: block;
+  filter: drop-shadow(0 6px 14px rgba(98, 59, 153, 0.28));
+  transform-origin: center 58%;
+  /* Intro: fill scales up from nothing (550ms), then breathing loop. */
+  animation:
+    gratitude-fill-in 550ms cubic-bezier(.2,.8,.2,1) 900ms both,
+    gratitude-breath 6s ease-in-out 2800ms infinite;
+}
+.gratitude__heart-path {
+  /* Path length is ~320 units; dasharray + dashoffset equal to that length
+     hides the stroke, then animates it back to 0 to "draw" the outline. */
+  stroke-dasharray: 340;
+  stroke-dashoffset: 340;
+  animation: gratitude-draw 900ms cubic-bezier(.6,.1,.2,1) 150ms forwards;
+}
+.gratitude__radiance {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle,
+    rgba(250, 92, 30, 0.28) 0%,
+    rgba(98, 59, 153, 0.18) 45%,
+    rgba(98, 59, 153, 0) 72%);
+  opacity: 0;
+  transform: scale(0.6);
+  /* Intro radiance (one-shot) and the pulse loop piggybacked on the same
+     element for fewer layout objects. Different delays keep them clean. */
+  animation:
+    gratitude-radiance-in 1400ms ease-out 1200ms forwards,
+    gratitude-pulse 6s ease-in-out 2800ms infinite;
+}
+
+@keyframes gratitude-draw {
+  to { stroke-dashoffset: 0; }
+}
+@keyframes gratitude-fill-in {
+  from { transform: scale(0.2); opacity: 0; }
+  60%  { transform: scale(1.08); opacity: 1; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+@keyframes gratitude-radiance-in {
+  0%   { opacity: 0; transform: scale(0.6); }
+  55%  { opacity: 1; transform: scale(1.6); }
+  100% { opacity: 0; transform: scale(2.1); }
+}
+@keyframes gratitude-breath {
+  /* Subtle — 1.5% scale bump, slow in-and-out. Only plays on the heart. */
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.025); }
+}
+@keyframes gratitude-pulse {
+  /* Quieter reprise of the intro radiance every 6s. */
+  0%, 100% { opacity: 0; transform: scale(0.8); }
+  40%      { opacity: 0.55; transform: scale(1.35); }
+  80%      { opacity: 0; transform: scale(1.7); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gratitude__heart        { animation: none; }
+  .gratitude__heart-path   { stroke-dashoffset: 0; animation: none; }
+  .gratitude__radiance     { animation: none; opacity: 0; }
+}
+
+/* Hide the old inline status icon on the paid path — the heart stands in
+   for it. Pending/unpaid states still show the clock icon because it would
+   be inappropriate to celebrate before payment clears. */
+.status--ok .status__icon { display: none; }
