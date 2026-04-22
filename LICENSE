@@ -1,0 +1,61 @@
+NDASA Donation Platform
+Proprietary Software License
+
+Copyright (c) 2026 NDASA Foundation. All rights reserved.
+
+Originally authored by William Cross.
+Maintained by John O'Grady (jwogrady), Status26 Inc.
+All rights assigned to NDASA Foundation (https://ndasafoundation.org/).
+
+------------------------------------------------------------------------
+Terms
+------------------------------------------------------------------------
+
+This software and its associated source code, documentation, and assets
+(collectively, the "Software") are the proprietary property of the NDASA
+Foundation. The Software is made available under the following terms:
+
+1. Ownership
+   All right, title, and interest in and to the Software, including all
+   intellectual property rights, are and shall remain the exclusive
+   property of NDASA Foundation.
+
+2. Restricted Use
+   No license, express or implied, is granted to any party to use, copy,
+   modify, merge, publish, distribute, sublicense, or create derivative
+   works from the Software without the prior written permission of
+   NDASA Foundation. Use of the Software by contractors, vendors, or
+   partners is permitted only to the extent authorized in writing by
+   NDASA Foundation and solely for the benefit of NDASA Foundation.
+
+3. Confidentiality
+   The Software, including its source code and internal documentation,
+   is confidential. Recipients who are granted access must take
+   reasonable measures to protect it from unauthorized disclosure.
+
+4. No Warranty
+   The Software is provided "as is," without warranty of any kind,
+   express or implied, including but not limited to the warranties of
+   merchantability, fitness for a particular purpose, and
+   non-infringement. In no event shall the authors, maintainers, or
+   NDASA Foundation be liable for any claim, damages, or other
+   liability arising from, out of, or in connection with the Software
+   or the use or other dealings in the Software.
+
+5. Third-Party Components
+   The Software depends on third-party open-source libraries installed
+   through Composer. Those libraries remain subject to their own
+   respective licenses, which accompany their source in the
+   `vendor/` directory once dependencies are installed.
+
+6. Contact
+   Requests for use, licensing inquiries, or questions regarding this
+   notice should be directed to NDASA Foundation via
+   https://ndasafoundation.org/.
+
+------------------------------------------------------------------------
+Recognition
+------------------------------------------------------------------------
+
+This platform exists because of the foundational work of William Cross.
+It is maintained in his honor.
