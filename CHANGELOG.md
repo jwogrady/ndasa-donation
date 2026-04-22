@@ -1,83 +1,109 @@
 # Changelog
 
-All notable changes to the NDASA Donation Platform are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+All notable changes to the NDASA Donation Platform are documented in this file. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
 ### Added
 
-- **Dedication field** on the donor form ("in memory of / in honor of"). Optional, 200-char cap, stored in Stripe session + PaymentIntent metadata and persisted to a new `donations.dedication` column. Surfaced in the staff-notification email and the admin donation detail view; intentionally not printed on the donor receipt.
-- **CSV export** of donations at `/admin/export`. Optional `from` / `to` date filters (YYYY-MM-DD, interpreted in `APP_TIMEZONE`); streams `text/csv` with ISO-8601 timestamps. Accessible from a new form in the Recent Donations panel.
-- **Donation detail page** at `/admin/donations/{order_id}`. Shows order metadata, donor info, status, dedication, and (for mode-aware deep linking) a link into the Stripe dashboard at the correct live/test URL. Recent Donations rows now link here.
-- **Admin audit log.** New `admin_audit` SQLite table records config saves and Stripe live/test toggles with actor, action, detail, and timestamp. Renders as an "Admin Activity" panel on the dashboard (20 most recent). Config-save entries record which keys changed but never log values — secrets stay out of the log.
-- **Redesigned donor header** with foundation logo, wordmark, and a rotating slogan strip (50 curated slogans in `src/Support/Slogans.php`). Random starting slogan per page view; three animation modes (fade / drift / reveal) that never repeat back-to-back. Respects `prefers-reduced-motion` and pauses while the tab is hidden.
-- **Thank-you "gratitude moment"** on the success page: animated gradient heart (purple-to-orange) shown only when the payment is confirmed `paid`.
-- **Site footer** with tagline, copyright year, 501(c)(3) acknowledgement, and a Stripe attribution link.
-- **Admin-controlled Stripe live/test mode toggle.** A new `app_config` SQLite table persists the active mode; the admin dashboard exposes a switch that flips modes on the next request without an `.env` edit or PHP-FPM reload. Requires paired `STRIPE_LIVE_*` / `STRIPE_TEST_*` secrets in `.env`; legacy `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` remain valid as live-mode fallbacks.
-- **Donor-facing test-mode banner** — sticky amber bar with a pulsing TEST chip, rendered only while the toggle is in test mode. Respects `prefers-reduced-motion`.
-- **Read-only prod diagnostic script** at `deploy/diagnose.sh` for fast on-host triage.
-- **Env-sync check** at `bin/check-env-sync.php` that verifies `.env.example` and `deploy/.env.template` declare the same key set.
+- **Recurring donations.** Frequency toggle on the donor form (One-time / Monthly / Yearly, default One-time). Monthly and yearly selections create a Stripe Subscription instead of a one-time Payment session. Fee-cover gross-up, when elected, is baked into the subscription price at signup and stays fixed for the subscription lifetime. CTA and total preview update live based on the chosen frequency.
+- **Stripe Customer Portal integration.** Success page mints a Portal session for recurring donors with a "Manage or cancel this donation" link. Degrades gracefully to a contact-us message if the Portal isn't enabled in the Stripe dashboard.
+- **Webhook handlers for subscriptions**: `invoice.paid`, `invoice.payment_failed`, `customer.subscription.deleted`. First-invoice dedupe against `checkout.session.completed` via `order_id` lookup; subsequent recurring charges use `inv_<invoice_id>` as a synthetic, deterministic order_id so retries stay idempotent.
+- **Dedication field** on the donor form ("in memory / in honor of"), 200-char cap, stored in Stripe metadata and a new `donations.dedication` column. Surfaced in the staff-notification email and admin detail view; not printed on the donor receipt.
+- **Newsletter opt-in checkbox** below the email field, pre-checked by default. Propagates through validator → Stripe metadata → webhook → a new `donations.email_optin` column. Visible on the admin detail view and CSV export. Consent capture only — no send path yet.
+- **Clickable impact cards** on the donor form. Each `<button>` card selects the matching preset, scrolls the form into view, and updates the total preview. Default ($100) tier is visually highlighted.
+- **Mobile layout reorder**: below 560px, the donation form renders immediately after the hero with impact/allocation sections below. Desktop unchanged. DOM order preserved for screen readers.
+- **Success-page "amplify" block**: share buttons (X, Facebook, LinkedIn, email) with prefilled copy, plus a Double-the-Donation employer-matching lookup link.
+- **CSV export of donations** at `/admin/export` with optional `from` / `to` date filters (YYYY-MM-DD, interpreted in `APP_TIMEZONE`). Streams `text/csv` with ISO-8601 timestamps; includes interval, subscription id, dedication, and newsletter opt-in columns.
+- **Donation detail page** at `/admin/donations/{order_id}` with mode-aware deep links into the Stripe dashboard for the PaymentIntent and Subscription.
+- **Admin audit log**. Append-only `admin_audit` table records config saves and Stripe mode toggles with actor, action, detail, and timestamp. Config saves log only the *changed* key names — never values, so secrets stay out of the log. Renders as an "Admin Activity" panel on the dashboard.
+- **Runtime Stripe live/test mode toggle.** Persisted in a new `app_config` SQLite table; flips on the next request with no `.env` edit or PHP-FPM reload. Donor-facing amber TEST banner while in test mode.
+- **Redesigned donor header** with foundation logo, wordmark, and a rotating slogan strip (50 curated slogans). Three animation modes that never repeat back-to-back. Respects `prefers-reduced-motion`, pauses while the tab is hidden.
+- **Thank-you "gratitude moment"** on the success page: animated gradient heart shown only on confirmed paid.
+- **Site footer** with tagline, copyright year, 501(c)(3) acknowledgement, Stripe attribution.
+- **Diagnostic script** at `deploy/diagnose.sh` for read-only on-host triage.
+- **Env-sync check** at `bin/check-env-sync.php` that verifies `.env.example` and `deploy/.env.template` declare the same key set. Wired into CI.
+- **CI workflow** at `.github/workflows/ci.yml`: `php -l` on the tree, env-sync check, PHPUnit.
 
 ### Changed
 
-- Checkout session creation switched from `automatic_payment_methods` to an explicit `payment_method_types: ['card']` list. The NDASA Stripe account rejects the automatic form with `parameter_unknown`.
-- Stripe API version pinned to `2026-03-25.dahlia`.
-- Admin config editor expanded to cover all safe keys (Stripe, APP_URL, mail, SMTP components, donation bounds, trusted proxies) with per-field validation.
+- **Webhook signature verification** accepts both the live and test signing secrets, first-secret-wins. Flipping the admin mode toggle no longer strands in-flight retries signed with the previous mode's secret.
+- **Webhook idempotency is two-phase.** The handler runs first; the `stripe_events` row is inserted only after success. A transient handler failure now lets Stripe retry successfully instead of silently deduping a failed event. Downstream writes remain idempotent via `INSERT OR IGNORE` on `donations.order_id`.
+- **`Csrf::rotate()` regenerates the PHP session ID** (`session_regenerate_id(true)`) in addition to minting a fresh token, closing a session-fixation window.
+- **Fee-cover default is "Yes"** on a fresh page load. Sticky re-renders still honor the donor's submitted value.
+- **Impact-tier copy rewritten** to match the foundation's actual programs (Clothes for Orphans / Schools for Poor / Water Systems) sourced from ndasafoundation.org/about/causes/.
+- **Admin dashboard metrics** collapsed from three separate donation aggregations into one SQL query (count, distinct donors, sum).
+- **`HealthCheck::all()`** now returns `{groups, missing_indexes}` so the dashboard doesn't probe the index list twice.
+- **Stripe credential resolution consolidated** into `AppConfig::resolveStripeCredentials(mode, env)`. Replaces three divergent copies across bootstrap, dashboard, and mode-toggle handler.
+- **Admin health and required-keys checks** no longer probe the bootstrap-synthesized `$_ENV['STRIPE_SECRET_KEY']` / `STRIPE_WEBHOOK_SECRET`; they now check the source `STRIPE_LIVE_*` / `STRIPE_TEST_*` pairs for the active mode.
+- **Content-Type sniff** on `/webhook`: non-`application/json` requests are rejected with 415 before hitting signature verification.
+- **Checkout session** uses explicit `payment_method_types: ['card']` instead of `automatic_payment_methods` (Stripe rejects the automatic form on this account).
 
 ### Fixed
 
-- Rate limiter rewritten to avoid `UPSERT` and `RETURNING`. Nexcess managed WordPress ships SQLite 3.7.17 (2013), which predates both; every `/checkout` POST was returning a generic error page. Replaced with a select-then-insert-or-update wrapped in a transaction.
-- Deploy installer: removed a bogus publishable-key check and fixed quoting in the `awk`/`tr` pipeline; active `.env` is now preserved across re-installs.
+- Rate limiter uses select-then-insert-or-update inside a transaction instead of `UPSERT` / `RETURNING`. Nexcess managed WP ships SQLite 3.7.17, which predates both.
+- Deploy installer: dropped a bogus publishable-key check; fixed `awk`/`tr` quoting; preserves active `.env` across reinstalls.
+
+### Schema
+
+- `donations.dedication` (TEXT, nullable)
+- `donations.email_optin` (INTEGER, nullable: `1` opted in / `0` opted out / NULL pre-feature)
+- `donations.interval` (TEXT, nullable: `'month'` / `'year'` / NULL one-time)
+- `donations.stripe_subscription_id` (TEXT, nullable)
+- `donations.stripe_customer_id` (TEXT, nullable)
+- `admin_audit` table (id, actor, action, detail, created_at) + `idx_admin_audit_created_at`
+- `app_config` table (key, value, updated_at)
+- `idx_donations_status`, `idx_donations_subscription`
+
+All migrations are idempotent and SQLite 3.7.17-safe (probe `pragma_table_info` before `ALTER TABLE ADD COLUMN`).
 
 ---
 
-## 1.0.0 &mdash; 2026-04-21
+## 1.0.0 — 2026-04-21
 
-Initial public release of the secure-rebuild donation platform. Replaces the legacy donation application wholesale with a webhook-authoritative design that keeps card data off the server and treats Stripe as the single source of truth. Adds a Basic-Auth-protected admin panel with a metrics dashboard, a safe `.env` config editor, and a grouped System Health view.
+Initial public release of the secure-rebuild donation platform. Replaces the legacy application wholesale with a webhook-authoritative design that keeps card data off the server and treats Stripe as the single source of truth.
 
 ### Added
 
-- **Donation form** at `/` with $25/$50/$100/$250/$500 preset tiers and a free-form "Other" amount; HTML5 number input bounded by `DONATION_MIN_CENTS` / `DONATION_MAX_CENTS`.
-- **"Cover the processing fee"** opt-in with live client-side preview. Server-side `FeeCalculator` grosses up the charge (2.9% + 30¢) so the foundation nets the donor's intended amount; the JS reads the same constants so the on-screen math never drifts.
-- **Stripe Checkout integration** via `DonationService`. Creates a hosted session with `mode=payment`, a Stripe-side `idempotency_key`, 30-minute TTL, and `submit_type=donate`. Success and cancel URLs are derived from `APP_URL`.
-- **Success page** that reads the Checkout Session back from Stripe and renders one of three truthful states — `paid`, `unpaid` (async methods still clearing), or unknown.
-- **Webhook pipeline** at `/webhook` handling `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `charge.refunded`, and `payment_intent.payment_failed`. Signatures verified with a 300-second tolerance; duplicate deliveries are idempotent via the `stripe_events` table.
-- **Staff notification email** sent through Symfony Mailer on every successful donation; donor receipts are sent by Stripe via `receipt_email`.
-- **Admin panel** at `/admin` (HTTP Basic Auth via `ADMIN_USER` / `ADMIN_PASS`). Hardened header parsing supports both `PHP_AUTH_*` and a fallback parse of `HTTP_AUTHORIZATION` for FastCGI/LiteSpeed hosts (including Nexcess).
-- **Admin dashboard metrics** — total donations (amount and count), distinct donor count, page views, and conversion rate — derived from the local SQLite ledger only; no live Stripe API calls.
-- **Recent donations table** (10 rows) with date, donor, amount, and status.
-- **System Health checks** grouped into Database (connection, table existence, index presence), Environment (writability of `.env`, DB file, `storage/logs/`), and Configuration (presence of required env vars). Every probe is try/catch-wrapped and cannot crash the page.
-- **Admin config editor** at `/admin/config` — atomic write via temp-file + `rename()`, preserves comments and unknown keys, rejects newline injection, CSRF-protected.
-- **Page-view tracking** with a 30-second per-session throttle so refreshes and cookie-holding bots cannot inflate the count; a DB failure never blocks the donation form.
-- **Version resolver** with preference order `APP_VERSION` env &rarr; short git hash (parsed from `.git/HEAD`, loose refs, and packed-refs) &rarr; hardcoded `1.0.0` fallback. No shell-outs.
-- **Trusted-proxy client-IP resolution** honouring `X-Forwarded-For` only when the immediate hop is in `TRUSTED_PROXIES` (CIDRs or IPs). Never trusts XFF blindly.
-- **Auto-migrating SQLite schema** on first connection: `donations`, `stripe_events`, `page_views`, `rate_limit`, `app_config`, plus `idx_donations_created_at` / `idx_page_views_created_at`. WAL journal, foreign keys on, 5 s busy timeout.
-- **Nexcess managed-WordPress deployment kit** in `deploy/`: `install.sh`, Apache `.htaccess` shims, PHP shims for `index.php` / `webhook.php` under the public `donation/` path, and a WordPress mu-plugin (`ndasa-shared-env.php`) that bridges `.env` into WP Mail SMTP.
-- **Audience-separated documentation**: `README.md`, `docs/USER.md`, `docs/ADMIN.md`, `docs/CONTRIBUTING.md`, plus `ROADMAP.md`, `LICENSE`, `TRIBUTE.md`.
-- **PHPUnit tests** for `AmountValidator` and `ClientIp`.
+- Donation form at `/` with preset tiers + free-form "Other"
+- "Cover the processing fee" opt-in with live client-side preview and server-side `FeeCalculator` (2.9% + 30¢) as the source of truth
+- Stripe Checkout integration via `DonationService` (`mode=payment`, per-order idempotency key, 30-minute TTL, `submit_type=donate`)
+- Success page that reads back the Checkout Session from Stripe and renders `paid` / `unpaid` (async) / unknown states truthfully
+- Webhook pipeline handling `checkout.session.completed`, `checkout.session.async_payment_{succeeded,failed}`, `charge.refunded`, `payment_intent.payment_failed`; 300-second signature tolerance; idempotency via `stripe_events`
+- Staff notification email via Symfony Mailer on every paid donation; donor receipts sent by Stripe via `receipt_email`
+- Admin panel at `/admin` behind HTTP Basic Auth with hardened header parsing (supports FastCGI / LiteSpeed)
+- Dashboard metrics: total donations, donor count, page views, conversion rate — derived from local SQLite, no live Stripe API calls
+- Recent donations table (10 rows)
+- System Health checks grouped into Database / Environment / Configuration; every probe try/catch-wrapped
+- Admin config editor: atomic `.env` write (temp-file + `rename()`), preserves comments and unknown keys, rejects CR/LF injection, CSRF-protected
+- Page-view tracking with 30-second per-session throttle
+- Version resolver: `APP_VERSION` → short git hash → hardcoded fallback; no shell-outs
+- Trusted-proxy XFF resolution (CIDR-aware)
+- Auto-migrating SQLite schema on connection; WAL journal, foreign keys on, 5 s busy timeout
+- Nexcess managed-WordPress deploy kit: `install.sh`, `.htaccess` shims, PHP shims, `ndasa-shared-env.php` mu-plugin
+- PHPUnit tests for `AmountValidator` and `ClientIp`
 
 ### Changed
 
-- Donation metrics reflect paid-only transactions (`status = 'paid'`); refunded and failed rows are excluded so the dashboard shows actual revenue rather than attempts.
-- SMTP configuration accepts either a pre-formed `SMTP_DSN` or discrete `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_ENCRYPTION` components; components are safer because special characters in the password do not need URL-encoding.
-- Front controller is subpath-aware: the router strips the prefix derived from `APP_URL` so deployments at `https://host/donation` route correctly.
-- CSRF tokens rotate on fresh form renders (not on every `validate()`), so honest retries and back-button resubmits keep working while cross-request replay remains blocked.
+- Dashboard metrics reflect paid-only rows (`status = 'paid'`); refunded and failed attempts excluded
+- SMTP accepts either `SMTP_DSN` or discrete `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_ENCRYPTION` components
+- Subpath-aware front controller: strips the path prefix derived from `APP_URL`
+- CSRF tokens rotate on fresh renders, not on every `validate()`, so honest retries keep working
 
 ### Security
 
-- PCI-DSS scope reduced to **SAQ-A** by keeping all card entry on `checkout.stripe.com`.
-- Strict Content Security Policy with a per-request script/style nonce; `form-action` allow-lists `self` and `https://checkout.stripe.com`; `frame-ancestors 'none'`; HSTS, `X-Content-Type-Options`, `Referrer-Policy`, and `Permissions-Policy` set on every non-webhook response.
-- Production HTTPS redirect for GET requests when the edge reports plain HTTP.
-- CSRF protection on all POST routes (`/checkout`, `/admin/config`, `/admin/stripe-mode`) using the same per-session token utility.
-- Hardened Basic Auth header parsing: strict `Basic <base64>` regex, case-insensitive scheme match, whitespace trim, and a try/catch around the fallback parser so malformed headers fail closed instead of raising.
-- Amount validator rejects scientific notation, locale separators, and non-numeric input; donor-name and email values reject CR/LF injection before reaching Stripe metadata or mail headers.
-- Prepared statements only; no string-concatenation SQL anywhere in the codebase.
-- Idempotent webhook handling via `stripe_events` prevents duplicate deliveries from double-recording a donation.
+- PCI-DSS scope reduced to SAQ-A
+- Strict CSP with per-request nonce; HSTS; `X-Frame-Options: DENY`; `Referrer-Policy`; `Permissions-Policy`
+- Production HTTPS redirect on GET
+- CSRF on all state-changing POSTs
+- Amount validator rejects scientific notation / locale separators / non-numeric input
+- Donor-name, email, and mail-header values reject CR/LF injection
+- Prepared statements only
 
 ---
 
 ## Development-history notes
 
-The `master` branch preserves a legacy-import commit (`c86e559`) and a breaking-change removal commit (`2b0b702`) that together record the import and removal of the pre-rebuild codebase. They are intentionally retained so the security rationale for the rebuild is auditable from the history itself. The 1.0.0 release is not derived from those trees; it is a ground-up rewrite.
+The `master` branch preserves a legacy-import commit (`c86e559`) and a breaking-change removal commit (`2b0b702`) that together record the import and removal of the pre-rebuild codebase. They are intentionally retained so the security rationale for the rebuild is auditable from git history. The 1.0.0 release is a ground-up rewrite, not derived from those trees.
 
 [1.0.0]: https://github.com/jwogrady/ndasa-donation/releases/tag/v1.0.0
