@@ -35,7 +35,8 @@ else
     mode=$(stat -c '%a' "$ENV_FILE" 2>/dev/null || stat -f '%Lp' "$ENV_FILE")
     if [[ "$mode" == "600" ]]; then ok ".env mode is 600"; else warn ".env mode is $mode (expected 600)"; fi
 
-    required=(APP_URL STRIPE_SECRET_KEY STRIPE_PUBLISHABLE_KEY STRIPE_WEBHOOK_SECRET DB_PATH)
+    # STRIPE_PUBLISHABLE_KEY is NOT required — Checkout is hosted, no JS client key needed.
+    required=(APP_URL STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET DB_PATH)
     for k in "${required[@]}"; do
         line=$(grep -E "^${k}=" "$ENV_FILE" | head -1 || true)
         if [[ -z "$line" ]]; then
@@ -57,11 +58,6 @@ else
                 elif [[ "$val" == rk_*     ]]; then warn "STRIPE_SECRET_KEY is a restricted key (rk_…) — may lack Checkout scope"
                 else                               bad  "STRIPE_SECRET_KEY does not start with sk_ / rk_ (shape wrong)"
                 fi ;;
-            STRIPE_PUBLISHABLE_KEY)
-                if   [[ "$val" == pk_live_* ]]; then ok "STRIPE_PUBLISHABLE_KEY = pk_live_…"
-                elif [[ "$val" == pk_test_* ]]; then warn "STRIPE_PUBLISHABLE_KEY = pk_test_… (TEST mode)"
-                else                                 bad  "STRIPE_PUBLISHABLE_KEY shape wrong"
-                fi ;;
             STRIPE_WEBHOOK_SECRET)
                 if   [[ "$val" == whsec_* ]]; then ok "STRIPE_WEBHOOK_SECRET = whsec_… (length=${#val})"
                 else                               bad "STRIPE_WEBHOOK_SECRET does not start with whsec_"
@@ -74,16 +70,19 @@ else
         esac
     done
 
-    # Mode consistency check between sk and pk.
-    sk=$(grep -E '^STRIPE_SECRET_KEY='      "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '"'"'"' )
-    pk=$(grep -E '^STRIPE_PUBLISHABLE_KEY=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '"'"'"' )
-    sk_mode=''; pk_mode=''
-    [[ "$sk" == sk_live_* ]] && sk_mode=live ; [[ "$sk" == sk_test_* ]] && sk_mode=test
-    [[ "$pk" == pk_live_* ]] && pk_mode=live ; [[ "$pk" == pk_test_* ]] && pk_mode=test
-    if [[ -n "$sk_mode" && -n "$pk_mode" && "$sk_mode" != "$pk_mode" ]]; then
-        bad "Stripe key mode MISMATCH: secret=$sk_mode, publishable=$pk_mode"
-    elif [[ -n "$sk_mode" ]]; then
-        ok "Stripe secret+publishable both in $sk_mode mode"
+    # Read keys for later sections. Use awk so we don't fight tr over quote chars.
+    read_env() { awk -F= -v k="$1" '$1==k{sub(/^[^=]*=/,""); gsub(/^["'"'"']|["'"'"']$/,""); print; exit}' "$ENV_FILE"; }
+    sk=$(read_env STRIPE_SECRET_KEY)
+    whsec=$(read_env STRIPE_WEBHOOK_SECRET)
+
+    # Mode sanity — flag if the webhook secret was issued under a different mode.
+    # whsec values don't encode mode in their prefix, but the Stripe dashboard does:
+    # a test-mode endpoint's whsec will reject live events with signature failures.
+    # We can't detect that from the secret alone — noted here for awareness.
+    if [[ "$sk" == sk_live_* ]]; then
+        ok "Secret key is LIVE — ensure the webhook endpoint in the Stripe dashboard is also LIVE mode"
+    elif [[ "$sk" == sk_test_* ]]; then
+        ok "Secret key is TEST — ensure the webhook endpoint in the Stripe dashboard is also TEST mode"
     fi
 fi
 
@@ -133,7 +132,7 @@ fi
 
 # —————————————————————————————————————————————————————————
 bold "6. Public endpoints (local curl)"
-app_url=$(grep -E '^APP_URL=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"'"'"' )
+app_url=$(awk -F= '$1=="APP_URL"{sub(/^[^=]*=/,""); gsub(/^["'"'"']|["'"'"']$/,""); print; exit}' "$ENV_FILE" 2>/dev/null)
 if [[ -n "$app_url" ]]; then
     code=$(curl -sI -o /dev/null -w '%{http_code}' "$app_url/")
     [[ "$code" == "200" ]] && ok "GET $app_url/ → 200" || warn "GET $app_url/ → $code"
