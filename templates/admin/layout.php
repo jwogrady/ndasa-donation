@@ -59,19 +59,32 @@ $appVersion ??= '';
   header {
     background: var(--topbar);
     color: #fff;
-    padding: 14px 24px;
+    padding: 10px 24px;
     display: flex;
     align-items: center;
-    gap: 32px;
+    gap: 20px;
     border-bottom: 1px solid var(--border);
   }
-  header h1 {
-    margin: 0;
+  .admin-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    color: #fff;
+    text-decoration: none;
+  }
+  .admin-brand__logo {
+    display: block;
+    width: auto;
+    height: 40px;
+    max-width: 100%;
+  }
+  .admin-brand__label {
     font-family: 'Roboto Condensed', system-ui, sans-serif;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 1px;
+    color: #fff;
   }
   nav { display: flex; gap: 8px; }
   nav a {
@@ -234,7 +247,14 @@ $appVersion ??= '';
 </head>
 <body>
 <header>
-  <h1>NDASA Admin</h1>
+  <a class="admin-brand" href="https://ndasafoundation.org/">
+    <img class="admin-brand__logo"
+         src="<?= Html::h(NDASA_BASE_PATH) ?>/assets/img/Foundation-Logo.png"
+         alt="NDASA Foundation"
+         width="31" height="40"
+         decoding="async">
+    <span class="admin-brand__label">Admin</span>
+  </a>
   <nav>
     <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin" class="<?= $active === 'dashboard' ? 'active' : '' ?>">Dashboard</a>
     <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/config" class="<?= $active === 'config' ? 'active' : '' ?>">Config</a>
