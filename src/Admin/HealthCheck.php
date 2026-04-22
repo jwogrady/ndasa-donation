@@ -208,6 +208,7 @@ final class HealthCheck
         $expected = [
             'idx_donations_created_at',
             'idx_donations_status',
+            'idx_donations_subscription',
             'idx_page_views_created_at',
         ];
         $missing = [];

@@ -109,12 +109,12 @@ final class Metrics
     /**
      * Most recent donations, newest first. Capped at $limit rows.
      *
-     * @return list<array{order_id:string,contact_name:?string,email:string,amount_cents:int,currency:string,status:string,created_at:int,refunded_at:?int,dedication:?string}>
+     * @return list<array{order_id:string,contact_name:?string,email:string,amount_cents:int,currency:string,status:string,created_at:int,refunded_at:?int,dedication:?string,interval:?string}>
      */
     public function recentDonations(int $limit = 10): array
     {
         $stmt = $this->db->prepare(
-            'SELECT order_id, contact_name, email, amount_cents, currency, status, created_at, refunded_at, dedication
+            'SELECT order_id, contact_name, email, amount_cents, currency, status, created_at, refunded_at, dedication, "interval"
              FROM donations
              ORDER BY created_at DESC
              LIMIT :n'
@@ -136,6 +136,7 @@ final class Metrics
                 'created_at'   => (int)    $r['created_at'],
                 'refunded_at'  => $r['refunded_at'] !== null ? (int) $r['refunded_at'] : null,
                 'dedication'   => $r['dedication'] !== null ? (string) $r['dedication'] : null,
+                'interval'     => $r['interval'] !== null ? (string) $r['interval'] : null,
             ];
         }
         return $out;
@@ -144,13 +145,14 @@ final class Metrics
     /**
      * Fetch a single donation by order_id for the admin detail view.
      *
-     * @return ?array{order_id:string,payment_intent_id:?string,contact_name:?string,email:string,amount_cents:int,currency:string,status:string,created_at:int,refunded_at:?int,dedication:?string,email_optin:?bool}
+     * @return ?array{order_id:string,payment_intent_id:?string,contact_name:?string,email:string,amount_cents:int,currency:string,status:string,created_at:int,refunded_at:?int,dedication:?string,email_optin:?bool,interval:?string,stripe_subscription_id:?string,stripe_customer_id:?string}
      */
     public function findDonation(string $orderId): ?array
     {
         $stmt = $this->db->prepare(
             'SELECT order_id, payment_intent_id, contact_name, email, amount_cents, currency, status,
-                    created_at, refunded_at, dedication, email_optin
+                    created_at, refunded_at, dedication, email_optin, "interval",
+                    stripe_subscription_id, stripe_customer_id
              FROM donations WHERE order_id = :oid'
         );
         $stmt->execute([':oid' => $orderId]);
@@ -159,17 +161,20 @@ final class Metrics
             return null;
         }
         return [
-            'order_id'          => (string) $r['order_id'],
-            'payment_intent_id' => $r['payment_intent_id'] !== null ? (string) $r['payment_intent_id'] : null,
-            'contact_name'      => $r['contact_name'] !== null ? (string) $r['contact_name'] : null,
-            'email'             => (string) $r['email'],
-            'amount_cents'      => (int)    $r['amount_cents'],
-            'currency'          => (string) $r['currency'],
-            'status'            => (string) $r['status'],
-            'created_at'        => (int)    $r['created_at'],
-            'refunded_at'       => $r['refunded_at'] !== null ? (int) $r['refunded_at'] : null,
-            'dedication'        => $r['dedication'] !== null ? (string) $r['dedication'] : null,
-            'email_optin'       => $r['email_optin'] !== null ? ((int) $r['email_optin'] === 1) : null,
+            'order_id'               => (string) $r['order_id'],
+            'payment_intent_id'      => $r['payment_intent_id'] !== null ? (string) $r['payment_intent_id'] : null,
+            'contact_name'           => $r['contact_name'] !== null ? (string) $r['contact_name'] : null,
+            'email'                  => (string) $r['email'],
+            'amount_cents'           => (int)    $r['amount_cents'],
+            'currency'               => (string) $r['currency'],
+            'status'                 => (string) $r['status'],
+            'created_at'             => (int)    $r['created_at'],
+            'refunded_at'            => $r['refunded_at'] !== null ? (int) $r['refunded_at'] : null,
+            'dedication'             => $r['dedication'] !== null ? (string) $r['dedication'] : null,
+            'email_optin'            => $r['email_optin'] !== null ? ((int) $r['email_optin'] === 1) : null,
+            'interval'               => $r['interval'] !== null ? (string) $r['interval'] : null,
+            'stripe_subscription_id' => $r['stripe_subscription_id'] !== null ? (string) $r['stripe_subscription_id'] : null,
+            'stripe_customer_id'     => $r['stripe_customer_id'] !== null ? (string) $r['stripe_customer_id'] : null,
         ];
     }
 
@@ -177,13 +182,13 @@ final class Metrics
      * All paid donations in a [from, to) unix-second range, oldest-first so
      * the CSV export streams in chronological order for bookkeeping.
      *
-     * @return list<array{order_id:string,payment_intent_id:?string,contact_name:?string,email:string,amount_cents:int,currency:string,status:string,created_at:int,refunded_at:?int,dedication:?string,email_optin:?bool}>
+     * @return list<array{order_id:string,payment_intent_id:?string,contact_name:?string,email:string,amount_cents:int,currency:string,status:string,created_at:int,refunded_at:?int,dedication:?string,email_optin:?bool,interval:?string,stripe_subscription_id:?string}>
      */
     public function donationsInRange(int $fromTs, int $toTs): array
     {
         $stmt = $this->db->prepare(
             'SELECT order_id, payment_intent_id, contact_name, email, amount_cents, currency, status,
-                    created_at, refunded_at, dedication, email_optin
+                    created_at, refunded_at, dedication, email_optin, "interval", stripe_subscription_id
              FROM donations
              WHERE created_at >= :from AND created_at < :to
              ORDER BY created_at ASC'
@@ -197,17 +202,19 @@ final class Metrics
         $out = [];
         foreach ($rows as $r) {
             $out[] = [
-                'order_id'          => (string) $r['order_id'],
-                'payment_intent_id' => $r['payment_intent_id'] !== null ? (string) $r['payment_intent_id'] : null,
-                'contact_name'      => $r['contact_name'] !== null ? (string) $r['contact_name'] : null,
-                'email'             => (string) $r['email'],
-                'amount_cents'      => (int)    $r['amount_cents'],
-                'currency'          => (string) $r['currency'],
-                'status'            => (string) $r['status'],
-                'created_at'        => (int)    $r['created_at'],
-                'refunded_at'       => $r['refunded_at'] !== null ? (int) $r['refunded_at'] : null,
-                'dedication'        => $r['dedication'] !== null ? (string) $r['dedication'] : null,
-                'email_optin'       => $r['email_optin'] !== null ? ((int) $r['email_optin'] === 1) : null,
+                'order_id'               => (string) $r['order_id'],
+                'payment_intent_id'      => $r['payment_intent_id'] !== null ? (string) $r['payment_intent_id'] : null,
+                'contact_name'           => $r['contact_name'] !== null ? (string) $r['contact_name'] : null,
+                'email'                  => (string) $r['email'],
+                'amount_cents'           => (int)    $r['amount_cents'],
+                'currency'               => (string) $r['currency'],
+                'status'                 => (string) $r['status'],
+                'created_at'             => (int)    $r['created_at'],
+                'refunded_at'            => $r['refunded_at'] !== null ? (int) $r['refunded_at'] : null,
+                'dedication'             => $r['dedication'] !== null ? (string) $r['dedication'] : null,
+                'email_optin'            => $r['email_optin'] !== null ? ((int) $r['email_optin'] === 1) : null,
+                'interval'               => $r['interval'] !== null ? (string) $r['interval'] : null,
+                'stripe_subscription_id' => $r['stripe_subscription_id'] !== null ? (string) $r['stripe_subscription_id'] : null,
             ];
         }
         return $out;

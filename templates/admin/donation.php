@@ -13,6 +13,10 @@
  *   created_at:int,
  *   refunded_at:?int,
  *   dedication:?string,
+ *   email_optin:?bool,
+ *   interval:?string,
+ *   stripe_subscription_id:?string,
+ *   stripe_customer_id:?string,
  * } $donation
  * @var string $stripeMode  'live' or 'test'.
  * @var string $appVersion
@@ -24,10 +28,18 @@ $title  = 'Donation ' . substr($donation['order_id'], 0, 8);
 $active = 'dashboard';
 
 $pi = $donation['payment_intent_id'] ?? '';
+$subId = $donation['stripe_subscription_id'] ?? '';
 // Stripe dashboard splits live and test; link into the right one so clicks
 // don't take an operator from the admin test view to a live PaymentIntent.
-$stripePath = $stripeMode === 'test' ? 'test/payments/' : 'payments/';
-$stripeUrl  = $pi !== '' ? 'https://dashboard.stripe.com/' . $stripePath . $pi : null;
+$prefix = 'https://dashboard.stripe.com/' . ($stripeMode === 'test' ? 'test/' : '');
+$stripeUrl     = $pi    !== '' ? $prefix . 'payments/'      . $pi    : null;
+$subStripeUrl  = $subId !== '' ? $prefix . 'subscriptions/' . $subId : null;
+
+$intervalLabel = match ($donation['interval'] ?? null) {
+    'month' => 'Monthly',
+    'year'  => 'Yearly',
+    default => 'One-time',
+};
 
 ob_start();
 ?>
@@ -74,6 +86,20 @@ ob_start();
           <?= Html::h(strtoupper($donation['currency'])) ?>
         </td>
       </tr>
+      <tr>
+        <th>Frequency</th>
+        <td><?= Html::h($intervalLabel) ?></td>
+      </tr>
+      <?php if ($subStripeUrl !== null): ?>
+        <tr>
+          <th>Subscription</th>
+          <td>
+            <a href="<?= Html::h($subStripeUrl) ?>" rel="noopener noreferrer" target="_blank">
+              <code><?= Html::h($subId) ?></code>
+            </a>
+          </td>
+        </tr>
+      <?php endif; ?>
       <tr>
         <th>Status</th>
         <td>

@@ -15,7 +15,9 @@
  *          currency:string,
  *          status:string,
  *          created_at:int,
- *          refunded_at:?int
+ *          refunded_at:?int,
+ *          dedication:?string,
+ *          interval:?string,
  *      }> $recent
  * @var list<string>     $missingRequired  Required env vars currently empty.
  * @var list<string>     $missingIndexes   Expected indexes not yet created.
@@ -151,12 +153,13 @@ ob_start();
         <th>Date</th>
         <th>Donor</th>
         <th>Amount</th>
+        <th>Frequency</th>
         <th>Status</th>
       </tr>
     </thead>
     <tbody>
       <?php if ($recent === []): ?>
-        <tr class="empty"><td colspan="4">No donations to display yet.</td></tr>
+        <tr class="empty"><td colspan="5">No donations to display yet.</td></tr>
       <?php else: ?>
         <?php foreach ($recent as $d): ?>
           <?php
@@ -165,11 +168,17 @@ ob_start();
                 : $d['email'];
             $date = date('Y-m-d H:i', $d['created_at']);
             $detailUrl = Html::h(NDASA_BASE_PATH) . '/admin/donations/' . Html::h($d['order_id']);
+            $freq = match ($d['interval']) {
+                'month' => 'Monthly',
+                'year'  => 'Yearly',
+                default => 'One-time',
+            };
           ?>
           <tr>
             <td><a href="<?= $detailUrl ?>"><?= Html::h($date) ?></a></td>
             <td><a href="<?= $detailUrl ?>"><?= Html::h($name) ?></a></td>
             <td><?= Html::h($fmtMoney($d['amount_cents'], $d['currency'])) ?></td>
+            <td><?= Html::h($freq) ?></td>
             <td><?= Html::h($d['status']) ?></td>
           </tr>
         <?php endforeach; ?>
