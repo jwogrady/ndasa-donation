@@ -1,7 +1,24 @@
 <?php
 /** @var string $paymentStatus */
 
+use NDASA\Support\Html;
+
 $title = 'Thank you — NDASA Foundation';
+
+// Share / amplify scaffolding. The donor just gave — they're in the highest-
+// intent moment they'll ever be in with NDASA. Hand them ways to multiply
+// the gift (share, employer matching) before offering a "donate again" CTA
+// they're unlikely to take in the same session.
+$shareUrl  = 'https://ndasafoundation.org/';
+$shareText = 'I just supported the NDASA Foundation. Join me in helping build stronger, healthier communities:';
+$twitterHref  = 'https://twitter.com/intent/tweet?text=' . rawurlencode($shareText . ' ' . $shareUrl);
+$facebookHref = 'https://www.facebook.com/sharer/sharer.php?u=' . rawurlencode($shareUrl);
+$linkedinHref = 'https://www.linkedin.com/sharing/share-offsite/?url=' . rawurlencode($shareUrl);
+$mailHref     = 'mailto:?subject=' . rawurlencode('Supporting the NDASA Foundation')
+              . '&body=' . rawurlencode($shareText . "\n\n" . $shareUrl);
+// doublethedonation.com is the industry-standard employer-matching lookup.
+// If NDASA later licenses the widget, replace this link with their embed.
+$matchingHref = 'https://doublethedonation.com/matching-gifts/';
 
 ob_start();
 ?>
@@ -109,27 +126,55 @@ ob_start();
   </footer>
 </blockquote>
 
-<section class="stay-connected" aria-labelledby="stay-heading">
-  <h2 id="stay-heading">Stay connected</h2>
+<section class="amplify" aria-labelledby="amplify-heading">
+  <h2 id="amplify-heading">Multiply your gift</h2>
   <p>
-    Want to see the impact of your gift? We share stories from scholarship
-    recipients, grantee organizations, and community programs throughout the
-    year.
+    Your donation is already at work. Here are two ways to turn it into
+    more — both take less than a minute.
   </p>
-  <ul class="stay-connected__list">
-    <li>
-      <!-- {{PLACEHOLDER: real newsletter signup URL/form}} -->
-      Email <a href="mailto:info@ndasafoundation.org">info@ndasafoundation.org</a>
-      to join our newsletter or request information about our programs.
-    </li>
-    <li>
-      Ask your employer about matching gifts to double your impact.
-    </li>
-  </ul>
+
+  <div class="amplify__block">
+    <h3>Share with someone who cares</h3>
+    <p class="muted">
+      One forwarded email or post from a trusted friend moves more people
+      than any ad we could buy.
+    </p>
+    <ul class="share-buttons" aria-label="Share NDASA Foundation">
+      <li>
+        <a class="share share--twitter" href="<?= Html::h($twitterHref) ?>"
+           target="_blank" rel="noopener noreferrer">Post on X</a>
+      </li>
+      <li>
+        <a class="share share--facebook" href="<?= Html::h($facebookHref) ?>"
+           target="_blank" rel="noopener noreferrer">Share on Facebook</a>
+      </li>
+      <li>
+        <a class="share share--linkedin" href="<?= Html::h($linkedinHref) ?>"
+           target="_blank" rel="noopener noreferrer">Share on LinkedIn</a>
+      </li>
+      <li>
+        <a class="share share--email" href="<?= Html::h($mailHref) ?>">Email a friend</a>
+      </li>
+    </ul>
+  </div>
+
+  <div class="amplify__block">
+    <h3>Does your employer match?</h3>
+    <p class="muted">
+      Thousands of companies match charitable donations 1:1 or even 2:1.
+      Two minutes of paperwork can double or triple what you just gave.
+    </p>
+    <p>
+      <a class="btn btn--secondary" href="<?= Html::h($matchingHref) ?>"
+         target="_blank" rel="noopener noreferrer">
+        Check my employer's matching program &rarr;
+      </a>
+    </p>
+  </div>
 </section>
 
 <p class="actions">
-  <a class="btn btn--primary" href="<?= \NDASA\Support\Html::h(NDASA_BASE_PATH) ?>/">Make another donation</a>
+  <a class="btn btn--primary" href="<?= Html::h(NDASA_BASE_PATH) ?>/">Make another donation</a>
   <a class="btn btn--secondary" href="https://ndasafoundation.org/" rel="noopener">
     Return to ndasafoundation.org
   </a>

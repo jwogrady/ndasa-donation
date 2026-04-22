@@ -98,6 +98,18 @@ ob_start();
           <td><?= Html::h($donation['dedication']) ?></td>
         </tr>
       <?php endif; ?>
+      <tr>
+        <th>Email updates</th>
+        <td>
+          <?php if ($donation['email_optin'] === true): ?>
+            <span class="health-status-ok">OPTED IN</span>
+          <?php elseif ($donation['email_optin'] === false): ?>
+            <span class="muted">Opted out</span>
+          <?php else: ?>
+            <span class="muted">(not recorded)</span>
+          <?php endif; ?>
+        </td>
+      </tr>
     </tbody>
   </table>
 </div>

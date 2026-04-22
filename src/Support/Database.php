@@ -55,17 +55,19 @@ final class Database
             created_at INTEGER NOT NULL,
             refunded_at INTEGER
         )');
-        // Add dedication column to existing installs. SQLite 3.7.17 has no
+        // Add new columns to existing installs. SQLite 3.7.17 has no
         // "ADD COLUMN IF NOT EXISTS", so we probe pragma_table_info first.
-        $hasDedication = false;
+        $existingCols = [];
         foreach ($pdo->query("PRAGMA table_info(donations)") as $col) {
-            if (($col['name'] ?? '') === 'dedication') {
-                $hasDedication = true;
-                break;
-            }
+            $existingCols[(string) ($col['name'] ?? '')] = true;
         }
-        if (!$hasDedication) {
+        if (!isset($existingCols['dedication'])) {
             $pdo->exec('ALTER TABLE donations ADD COLUMN dedication TEXT');
+        }
+        if (!isset($existingCols['email_optin'])) {
+            // 0 = opted out, 1 = opted in. Nullable for rows that predate the
+            // column (their consent is genuinely unknown, not "no").
+            $pdo->exec('ALTER TABLE donations ADD COLUMN email_optin INTEGER');
         }
         $pdo->exec('CREATE TABLE IF NOT EXISTS rate_limit (
             key TEXT PRIMARY KEY,
