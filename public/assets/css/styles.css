@@ -1070,15 +1070,18 @@ a:hover { color: var(--cta); }
   box-shadow: 0 0 0 3px rgba(250, 92, 30, 0.25), 0 8px 18px rgba(250, 92, 30, 0.18);
 }
 .impact-card--default {
+  /* Extra top padding so the "Most donors" ribbon floating above the
+     card has breathing room and doesn't overlap the $100 amount below. */
+  padding-top: 1.6rem;
   border-color: var(--brand);
   box-shadow: 0 0 0 2px rgba(98, 59, 153, 0.14), 0 4px 12px rgba(98, 59, 153, 0.10);
 }
 /* "Most donors" ribbon on the default tier — gives the anchor a reason
-   to be the anchor. Positioned at the top edge, centered horizontally. */
+   to be the anchor. Sits above the card's top edge, centered. */
 .impact-card--default::before {
   content: "Most donors";
   position: absolute;
-  top: -10px;
+  top: -12px;
   left: 50%;
   transform: translateX(-50%);
   background: var(--brand);
@@ -1088,9 +1091,10 @@ a:hover { color: var(--cta); }
   font-weight: 700;
   letter-spacing: 2px;
   text-transform: uppercase;
-  padding: 3px 10px;
+  padding: 4px 12px;
   border-radius: 999px;
   box-shadow: 0 2px 4px rgba(98, 59, 153, 0.25);
+  white-space: nowrap;
 }
 .impact-card__amount {
   color: var(--brand);
@@ -1262,20 +1266,26 @@ a:hover { color: var(--cta); }
 .reassure__icon { flex: 0 0 auto; color: var(--success); margin-top: 0.1rem; }
 .reassure p { margin: 0; }
 
-/* Mobile */
+/* ────────────────────────────────────────────────────────────────────────
+   Mobile — phone-first optimization pass.
+   ≤560px: primary phone breakpoint. Form reflows above decorative blocks,
+           tap targets bump to 48px min, fieldset padding tightens.
+   ≤480px: narrow phones. Header contact strip drops; slogan hides; CTA
+           goes sticky at the bottom of the viewport while the form is
+           scrolled through.
+   ──────────────────────────────────────────────────────────────────────── */
 @media (max-width: 560px) {
-  .container { margin: 1rem; padding: 1.25rem; }
+  .container { margin: 0.75rem; padding: 1rem; }
   .container--wide { padding: 0.75rem 1rem; }
   .row { grid-template-columns: 1fr; }
   .presets { grid-template-columns: repeat(2, 1fr); }
-  .impact-grid { grid-template-columns: 1fr; }
+  .impact-grid { grid-template-columns: 1fr; gap: 1.5rem; }
   h1 { font-size: 1.5rem; }
   .status { flex-direction: column; gap: 0.5rem; }
 
-  /* Form-first on mobile: donor sees the amount picker on the first scroll.
-     Impact and allocation sections move below the form to support the
-     undecided donor rather than gatekeep the ready-to-give one. CSS order
-     only affects visual flow; DOM order is preserved for screen readers. */
+  /* Form-first on mobile: donor sees the amount picker on the first
+     scroll. Impact / tax-note / other-ways fall below. DOM order is
+     preserved for screen readers; only the visual flow reorders. */
   main.container { display: flex; flex-direction: column; }
   main.container > .hero         { order: 1; }
   main.container > .notice       { order: 2; }
@@ -1283,6 +1293,105 @@ a:hover { color: var(--cta); }
   main.container > .impact       { order: 4; }
   main.container > .tax-note     { order: 5; }
   main.container > .other-ways   { order: 6; }
+
+  /* Tighter vertical rhythm — every fieldset costs a scroll on mobile. */
+  .donation-form fieldset { padding: 0.85rem 1rem 1rem; margin-bottom: 1rem; }
+  .hero { margin-bottom: 1rem; }
+
+  /* Tap-target minimums (WCAG 2.5.5 → 44px; bumping to 48 for comfort).
+     Preset + frequency tiles stretch vertically on touch without changing
+     desktop sizing. */
+  .preset span,
+  .frequency__opt span {
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.85rem 0.5rem;
+  }
+  .amount-input input { min-height: 48px; font-size: 1rem; }
+  .donation-form input[type="text"],
+  .donation-form input[type="email"],
+  .donation-form input[type="tel"],
+  .donation-form input[type="number"],
+  .donation-form textarea {
+    min-height: 44px;
+    font-size: 1rem; /* 16px prevents iOS Safari zoom-on-focus */
+  }
+
+  /* Impact cards stack to a single column; the "Most donors" ribbon
+     floats above the default card and needs extra top gap so it doesn't
+     clip into the card above it. */
+  .impact-card--default { margin-top: 0.5rem; }
+
+  /* Footer strip reflow already in place elsewhere — this is a tighter
+     rhythm for the main band so the page doesn't end with oversized
+     whitespace. */
+  .site-footer__inner { padding-top: 20px; padding-bottom: 20px; }
+}
+
+@media (max-width: 480px) {
+  /* Drop the contact strip entirely on narrow phones — phone + social
+     aren't worth the vertical real estate when they push the hero
+     below the fold. */
+  .site-header__strip { display: none; }
+
+  /* Hide the rotating slogan too — on a 360px viewport it crammed the
+     header. Donors get the logo + DONATE label only. Desktop users
+     still get the full slogan animation. */
+  .site-header .slogan { display: none; }
+
+  /* Header main band: one row, logo + DONATE, tight. */
+  .site-header__main-inner {
+    grid-template-columns: auto 1fr;
+    grid-template-areas: "brand section";
+    gap: 10px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .container { margin: 0.5rem; padding: 0.85rem; }
+
+  /* Hero tier tighter on smallest screens. */
+  .hero h1 { font-size: 1.35rem; }
+  .hero .lede { font-size: 0.95rem; }
+  .hero__eyebrow .badge { font-size: 0.7rem; padding: 0.15rem 0.45rem; }
+
+  /* Preset row becomes a single tighter column so each amount is
+     thumb-reach from either hand. Three columns at this width was
+     making the $ amounts wrap. */
+  .presets { grid-template-columns: repeat(2, 1fr); gap: 0.4rem; }
+
+  /* Frequency tiles stack vertically so each interval reads clearly. */
+  .frequency { grid-template-columns: 1fr; gap: 0.5rem; }
+
+  /* Sticky submit CTA — anchors the donate button to the bottom of the
+     viewport once the form is scrolled past. Standard donation-page
+     pattern; donor never has to scroll back to find the action. Use a
+     separate class so the button can opt-in via the template. */
+  .donation-form .btn--primary.btn--sticky-mobile,
+  .donation-form button[type="submit"] {
+    /* position:sticky keeps natural document flow but pins the element
+       to the bottom once it would have scrolled off. Works on iOS 14+
+       and all modern Chrome/Firefox. Falls back gracefully on older
+       browsers — just stays inline. */
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    margin-inline: calc(-1 * 0.85rem);  /* bleed to container edges */
+    width: calc(100% + 1.7rem);
+    border-radius: 0;
+    box-shadow: 0 -4px 16px rgba(98, 59, 153, 0.22);
+  }
+
+  /* Re-anchor the give-monthly link under the sticky CTA so it still
+     reads in the flow. */
+  .give-monthly { margin-top: 0.5rem; }
+
+  /* Give the form bottom breathing room so the sticky CTA doesn't hide
+     the final fineprint / lock message when the donor scrolls to the
+     very end. */
+  .donation-form .fineprint { padding-bottom: 0.5rem; }
 }
 
 /* ——— Conversion patch 2: error notice, fee deltas, submit feedback ——— */
