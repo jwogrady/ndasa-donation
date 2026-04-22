@@ -19,6 +19,7 @@ use NDASA\Admin\Auth as AdminAuth;
 use NDASA\Admin\EnvFile;
 use NDASA\Admin\HealthCheck as AdminHealthCheck;
 use NDASA\Admin\Metrics as AdminMetrics;
+use NDASA\Admin\Version as AdminVersion;
 use NDASA\Http\ClientIp;
 use NDASA\Http\Csrf;
 use NDASA\Http\RateLimiter;
@@ -230,6 +231,7 @@ function render_admin_dashboard(): void
 
     $missingRequired = admin_missing_required();
     $health          = AdminHealthCheck::all();
+    $appVersion      = AdminVersion::current();
 
     require __DIR__ . '/../templates/admin/dashboard.php';
 }
@@ -256,6 +258,7 @@ function render_admin_config(?string $flashOk = null, ?string $flashErr = null):
 
     $csrf            = Csrf::token();
     $missingRequired = admin_missing_required();
+    $appVersion      = AdminVersion::current();
 
     require __DIR__ . '/../templates/admin/config.php';
 }

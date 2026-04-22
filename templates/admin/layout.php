@@ -2,18 +2,20 @@
 /**
  * Admin shell layout.
  *
- * @var string $title    Page title shown in the <title> and <h1>.
- * @var string $body     Pre-rendered body HTML (escaping is the caller's
- *                        responsibility — templates must run values through
- *                        NDASA\Support\Html::h() before interpolating).
- * @var string $active   Optional nav key: "dashboard" or "config".
+ * @var string $title       Page title shown in the <title> and <h1>.
+ * @var string $body        Pre-rendered body HTML (escaping is the caller's
+ *                           responsibility — templates must run values through
+ *                           NDASA\Support\Html::h() before interpolating).
+ * @var string $active      Optional nav key: "dashboard" or "config".
+ * @var string $appVersion  Resolved app version string for the footer.
  */
 
 use NDASA\Support\Html;
 
-$title  ??= 'NDASA Admin';
-$body   ??= '';
-$active ??= '';
+$title      ??= 'NDASA Admin';
+$body       ??= '';
+$active     ??= '';
+$appVersion ??= '';
 ?><!doctype html>
 <html lang="en">
 <head>
@@ -56,6 +58,10 @@ $active ??= '';
   th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; }
   th { color: #666; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
   tr.empty td { text-align: center; color: #888; padding: 32px 10px; }
+  footer { max-width: 960px; margin: 48px auto 24px; padding: 16px 24px 0; border-top: 1px solid #e2e2e2; color: #888; font-size: 12px; }
+  .health-status-ok   { color: #1b5e20; font-weight: 600; }
+  .health-status-fail { color: #7f1d1d; font-weight: 600; background: #fdecea; padding: 2px 6px; border-radius: 3px; }
+  .health-detail-fail { color: #7f1d1d; }
 </style>
 </head>
 <body>
@@ -69,5 +75,10 @@ $active ??= '';
 <main>
 <?= $body ?>
 </main>
+<footer>
+  <?php if ($appVersion !== ''): ?>
+    Version: <?= Html::h($appVersion) ?>
+  <?php endif; ?>
+</footer>
 </body>
 </html>
