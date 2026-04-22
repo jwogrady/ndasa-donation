@@ -70,4 +70,29 @@ final class AppConfig
     {
         return $this->stripeMode() === self::MODE_TEST;
     }
+
+    /**
+     * Resolve the (secret_key, webhook_secret) pair for a given mode from the
+     * provided env. Returns null if either half of the pair is missing.
+     *
+     * Live mode accepts legacy STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET as a
+     * fallback so pre-mode-toggle installs keep working. Test mode requires
+     * the explicit STRIPE_TEST_* pair.
+     *
+     * @param array<string,mixed> $env Usually $_ENV.
+     * @return ?array{secret:string,webhook:string}
+     */
+    public static function resolveStripeCredentials(string $mode, array $env): ?array
+    {
+        if ($mode === self::MODE_TEST) {
+            $secret  = (string) ($env['STRIPE_TEST_SECRET_KEY']     ?? '');
+            $webhook = (string) ($env['STRIPE_TEST_WEBHOOK_SECRET'] ?? '');
+        } else {
+            $secret  = (string) ($env['STRIPE_LIVE_SECRET_KEY']     ?? $env['STRIPE_SECRET_KEY']     ?? '');
+            $webhook = (string) ($env['STRIPE_LIVE_WEBHOOK_SECRET'] ?? $env['STRIPE_WEBHOOK_SECRET'] ?? '');
+        }
+        return ($secret !== '' && $webhook !== '')
+            ? ['secret' => $secret, 'webhook' => $webhook]
+            : null;
+    }
 }

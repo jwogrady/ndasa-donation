@@ -74,19 +74,14 @@ try {
     $ndasaMode = \NDASA\Admin\AppConfig::MODE_LIVE;
 }
 
-if ($ndasaMode === \NDASA\Admin\AppConfig::MODE_TEST) {
-    $stripeSecret  = $_ENV['STRIPE_TEST_SECRET_KEY']     ?? '';
-    $stripeWebhook = $_ENV['STRIPE_TEST_WEBHOOK_SECRET'] ?? '';
-} else {
-    $stripeSecret  = $_ENV['STRIPE_LIVE_SECRET_KEY']     ?? $_ENV['STRIPE_SECRET_KEY']     ?? '';
-    $stripeWebhook = $_ENV['STRIPE_LIVE_WEBHOOK_SECRET'] ?? $_ENV['STRIPE_WEBHOOK_SECRET'] ?? '';
-}
-
-if ($stripeSecret === '' || $stripeWebhook === '') {
+$stripeCreds = \NDASA\Admin\AppConfig::resolveStripeCredentials($ndasaMode, $_ENV);
+if ($stripeCreds === null) {
     http_response_code(500);
     error_log("NDASA: Stripe {$ndasaMode} mode selected but its key/webhook pair is missing from .env");
     exit('Server misconfigured.');
 }
+$stripeSecret  = $stripeCreds['secret'];
+$stripeWebhook = $stripeCreds['webhook'];
 
 // Re-populate $_ENV so downstream code (webhook.php, admin) reads the mode-
 // appropriate secret without needing to know about the mode system.

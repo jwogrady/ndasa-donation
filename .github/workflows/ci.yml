@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_sqlite, openssl, mbstring
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Syntax check (php -l)
+        run: |
+          find src public config bin tests -type f -name '*.php' -print0 \
+            | xargs -0 -n1 php -l
+
+      - name: Env-sync check
+        run: php bin/check-env-sync.php
+
+      - name: PHPUnit
+        run: vendor/bin/phpunit

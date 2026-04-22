@@ -15,6 +15,7 @@ declare(strict_types=1);
 
 namespace NDASA\Admin;
 
+use NDASA\Admin\AppConfig;
 use NDASA\Support\Database;
 
 /**
@@ -36,18 +37,34 @@ final class HealthCheck
      * Every probe is wrapped so it cannot throw; failures surface as FAIL
      * rows with a human-readable detail string.
      *
-     * @return array<string, list<array{label:string,ok:bool,detail:?string}>>
+     * Returns an associative array with two keys:
+     *   - 'groups'          : grouped check rows keyed by section name
+     *   - 'missing_indexes' : list of expected indexes currently missing
+     *
+     * The second value is useful for a separate dashboard banner; callers
+     * should not re-run the index probe to get it.
+     *
+     * @return array{
+     *     groups: array<string, list<array{label:string,ok:bool,detail:?string}>>,
+     *     missing_indexes: list<string>,
+     * }
      */
     public static function all(): array
     {
+        [$databaseRows, $missingIndexes] = self::databaseChecks();
         return [
-            'Database'      => self::databaseChecks(),
-            'Environment'   => self::environmentChecks(),
-            'Configuration' => self::configurationChecks(),
+            'groups' => [
+                'Database'      => $databaseRows,
+                'Environment'   => self::environmentChecks(),
+                'Configuration' => self::configurationChecks(),
+            ],
+            'missing_indexes' => $missingIndexes,
         ];
     }
 
-    /** @return list<array{label:string,ok:bool,detail:?string}> */
+    /**
+     * @return array{0: list<array{label:string,ok:bool,detail:?string}>, 1: list<string>}
+     */
     private static function databaseChecks(): array
     {
         $out = [];
@@ -70,14 +87,18 @@ final class HealthCheck
 
         $missingIndexes = $db !== null
             ? self::missingIndexes($db)
-            : ['idx_donations_created_at', 'idx_page_views_created_at'];
+            : [
+                'idx_donations_created_at',
+                'idx_donations_status',
+                'idx_page_views_created_at',
+            ];
         $out[] = self::row(
             'Database indexes',
             $missingIndexes === [],
             $missingIndexes === [] ? null : 'Missing: ' . implode(', ', $missingIndexes),
         );
 
-        return $out;
+        return [$out, $missingIndexes];
     }
 
     /** @return list<array{label:string,ok:bool,detail:?string}> */
@@ -107,10 +128,11 @@ final class HealthCheck
     /** @return list<array{label:string,ok:bool,detail:?string}> */
     private static function configurationChecks(): array
     {
-        // Must stay in sync with the fail-closed check in config/app.php.
+        // Non-Stripe required vars. Stripe credentials are mode-selected by
+        // bootstrap; if they were missing the app would never reach this code,
+        // so probing $_ENV['STRIPE_SECRET_KEY'] here would always pass. The
+        // mode panel on the dashboard shows live-ready / test-ready instead.
         $required = [
-            'STRIPE_SECRET_KEY',
-            'STRIPE_WEBHOOK_SECRET',
             'APP_URL',
             'DB_PATH',
             'MAIL_FROM',
@@ -124,6 +146,18 @@ final class HealthCheck
                 null,
             );
         }
+
+        // Stripe: check the source credentials for whichever mode is active.
+        $mode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
+        $stripeOk = AppConfig::resolveStripeCredentials($mode, $_ENV) !== null;
+        if ($mode === AppConfig::MODE_TEST) {
+            $label  = 'Stripe (TEST mode): key + webhook secret';
+            $detail = 'Set STRIPE_TEST_SECRET_KEY and STRIPE_TEST_WEBHOOK_SECRET in .env.';
+        } else {
+            $label  = 'Stripe (LIVE mode): key + webhook secret';
+            $detail = 'Set STRIPE_LIVE_SECRET_KEY and STRIPE_LIVE_WEBHOOK_SECRET in .env (legacy STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET also accepted).';
+        }
+        $out[] = self::row($label, $stripeOk, $stripeOk ? null : $detail);
 
         // SMTP is required but satisfied by either a DSN or components.
         $smtpOk = !empty($_ENV['SMTP_DSN']) || !empty($_ENV['SMTP_HOST']);
@@ -171,7 +205,11 @@ final class HealthCheck
     /** @return list<string> */
     public static function missingIndexes(\PDO $db): array
     {
-        $expected = ['idx_donations_created_at', 'idx_page_views_created_at'];
+        $expected = [
+            'idx_donations_created_at',
+            'idx_donations_status',
+            'idx_page_views_created_at',
+        ];
         $missing = [];
         foreach ($expected as $name) {
             try {
