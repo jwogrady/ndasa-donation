@@ -87,12 +87,6 @@ ob_start();
   </p>
   <ul class="stay-connected__list">
     <li>
-      <a href="https://ndasafoundation.org" rel="noopener">
-        Visit ndasafoundation.org
-      </a>
-      for news and program updates.
-    </li>
-    <li>
       <!-- {{PLACEHOLDER: real newsletter signup URL/form}} -->
       Email <a href="mailto:info@ndasafoundation.org">info@ndasafoundation.org</a>
       to join our newsletter or request information about our programs.
@@ -105,8 +99,8 @@ ob_start();
 
 <p class="actions">
   <a class="btn btn--primary" href="<?= \NDASA\Support\Html::h(NDASA_BASE_PATH) ?>/">Make another donation</a>
-  <a class="btn btn--secondary" href="https://ndasafoundation.org" rel="noopener">
-    Return to main site
+  <a class="btn btn--secondary" href="https://ndasafoundation.org/" rel="noopener">
+    Return to ndasafoundation.org
   </a>
 </p>
 

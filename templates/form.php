@@ -261,8 +261,9 @@ ob_start();
       <strong>Mail a check</strong>
       <span class="muted">
         <!-- {{PLACEHOLDER: real mailing address}} -->
-        Payable to "NDASA Foundation", mailed to the address listed at
-        <a href="https://ndasafoundation.org" rel="noopener">ndasafoundation.org</a>.
+        Payable to &ldquo;NDASA Foundation.&rdquo; Email
+        <a href="mailto:info@ndasafoundation.org">info@ndasafoundation.org</a>
+        for the current mailing address.
       </span>
     </li>
     <li>
