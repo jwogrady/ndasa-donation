@@ -9,19 +9,22 @@ If you are a donor, see [USER.md](USER.md). If you are responsible for running t
 ```
 .
 ├── public/                 (document root; nothing else should be web-reachable)
-│   ├── index.php           (front controller for GET /, POST /checkout, GET /success)
+│   ├── index.php           (front controller for GET /, POST /checkout, GET /success, admin routes)
 │   ├── webhook.php         (Stripe webhook entry point)
 │   ├── .htaccess           (Apache hardening + rewrite rules)
 │   └── assets/css/         (stylesheet)
 ├── config/
 │   └── app.php             (env load, security headers, session, Stripe SDK init)
 ├── src/
+│   ├── Admin/              (Auth, EnvFile, HealthCheck, Metrics, Version)
 │   ├── Http/               (Csrf, RateLimiter, ClientIp)
 │   ├── Mail/               (ReceiptMailer)
 │   ├── Payment/            (AmountValidator, FeeCalculator, DonationService)
 │   ├── Support/            (Database, Html)
 │   └── Webhook/            (WebhookController, EventStore)
-├── templates/              (form, success, error, layout)
+├── templates/
+│   ├── admin/              (layout, dashboard, config)
+│   └── …                   (form, success, error, layout for the donation flow)
 ├── tests/                  (PHPUnit)
 ├── deploy/                 (Nexcess-specific install kit; not part of the app proper)
 ├── storage/                (runtime: SQLite DB + logs; gitignored)
@@ -36,14 +39,19 @@ The `public/` tree is the only directory exposed by URL in any sensible deployme
 
 These are the files most often touched by changes:
 
-- [public/index.php](../public/index.php) &mdash; tiny front controller. Routes `GET /`, `POST /checkout`, `GET /success`. Subpath-aware: strips the path prefix of `APP_URL` before matching.
+- [public/index.php](../public/index.php) &mdash; tiny front controller. Routes `GET /`, `POST /checkout`, `GET /success`, and the three admin routes. Subpath-aware: strips the path prefix of `APP_URL` before matching. All `/admin*` paths pass through `AdminAuth::require()` immediately before dispatch.
 - [public/webhook.php](../public/webhook.php) &mdash; verifies the Stripe signature, constructs the event, and hands it to the webhook controller. Returns non-2xx only on handler failure (so Stripe retries).
 - [config/app.php](../config/app.php) &mdash; loads `.env`, validates required env vars, configures the Stripe SDK (with a pinned API version), emits security headers for browser responses, starts a hardened session. Webhook handler opts out of session handling via `NDASA_SKIP_SESSION`.
 - [src/Payment/DonationService.php](../src/Payment/DonationService.php) &mdash; wraps `Stripe\Checkout\Session::create`. Uses `automatic_payment_methods`; the deterministic idempotency key (`sess_<order_id>`) prevents double-submission from creating two Stripe sessions.
 - [src/Webhook/WebhookController.php](../src/Webhook/WebhookController.php) &mdash; dispatches Stripe events (`checkout.session.completed`, `.async_payment_succeeded`, `.async_payment_failed`, `charge.refunded`, `payment_intent.payment_failed`). Returns a boolean; the entry point decides HTTP status. Sync and async success paths converge on `recordPaidSession()`.
 - [src/Webhook/EventStore.php](../src/Webhook/EventStore.php) &mdash; the idempotency log and donation ledger. `markProcessed()` uses `INSERT OR IGNORE` + `rowCount()` so duplicate deliveries are detected atomically.
 - [src/Mail/ReceiptMailer.php](../src/Mail/ReceiptMailer.php) &mdash; staff notifications. Builds a Symfony Mailer `Dsn` from discrete `SMTP_*` env components (or accepts a pre-formed `SMTP_DSN`). Donor receipts are sent by Stripe, not by this class.
-- [src/Support/Database.php](../src/Support/Database.php) &mdash; lazy-singleton PDO handle on SQLite. Self-migrating. WAL, foreign keys, 5 s busy timeout; prepared statements only.
+- [src/Support/Database.php](../src/Support/Database.php) &mdash; lazy-singleton PDO handle on SQLite. Self-migrating (tables, indexes). WAL, foreign keys, 5 s busy timeout; prepared statements only.
+- [src/Admin/Auth.php](../src/Admin/Auth.php) &mdash; HTTP Basic Auth gate with a hardened `HTTP_AUTHORIZATION` fallback parser. Constant-time credential comparison.
+- [src/Admin/EnvFile.php](../src/Admin/EnvFile.php) &mdash; safe `.env` reader/updater. Preserves comments and unknown keys; writes to `.env.tmp` + `rename()` for atomicity; rejects CR/LF injection.
+- [src/Admin/Metrics.php](../src/Admin/Metrics.php) &mdash; read-only aggregate queries for the dashboard. All counts/sums filtered to `status = 'paid'`; per-instance memoisation.
+- [src/Admin/HealthCheck.php](../src/Admin/HealthCheck.php) &mdash; grouped system health (Database, Environment, Configuration). Every probe is try/catch-wrapped; nothing throws.
+- [src/Admin/Version.php](../src/Admin/Version.php) &mdash; resolves the admin-footer version string: `APP_VERSION` env → short git hash → fallback constant.
 
 ## Local development
 
