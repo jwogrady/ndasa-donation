@@ -156,7 +156,10 @@ $appVersion ??= '';
   form input[type="text"],
   form input[type="url"],
   form input[type="email"],
-  form input[type="password"] {
+  form input[type="password"],
+  form input[type="date"],
+  form input[type="number"],
+  form select {
     width: 100%;
     padding: 9px 12px;
     background: var(--surface-2);
@@ -243,6 +246,17 @@ $appVersion ??= '';
   .col-check  { width: 40%; }
   .col-status { width: 15%; }
   .fineprint  { margin-top: 24px; color: var(--dim); }
+  .export-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    margin: 0 0 16px;
+  }
+  .export-form label { margin: 0; }
+  .export-form input[type="date"] { width: auto; min-width: 160px; }
+  .export-form .help { flex-basis: 100%; margin: 0; }
+  .export-form button { margin-top: 0; }
 
   /* Stripe mode panel — live is calm/green, test is loud/amber. The pulse
      dot and hairline top border make the current mode unmistakable at a

@@ -32,9 +32,8 @@ final class Metrics
      * "not yet computed" without colliding with a legitimate zero result.
      */
     private ?int   $pageViewCount     = null;
-    private ?int   $donationCount     = null;
-    private ?int   $donorCount        = null;
-    private ?int   $totalDonationCents = null;
+    /** @var ?array{count:int,donors:int,total:int} */
+    private ?array $donationAggregate = null;
     private ?float $conversionPercent = null;
 
     public function __construct(private readonly PDO $db) {}
@@ -46,31 +45,49 @@ final class Metrics
     }
 
     /**
+     * Single query that returns count, distinct-donor count, and total cents
+     * for paid donations. Dashboards call three of these back-to-back; one
+     * query with three aggregates is one full-table scan instead of three.
+     *
+     * @return array{count:int,donors:int,total:int}
+     */
+    private function donationAggregate(): array
+    {
+        if ($this->donationAggregate !== null) {
+            return $this->donationAggregate;
+        }
+        $row = $this->db->query(
+            "SELECT COUNT(*) AS c, COUNT(DISTINCT lower(email)) AS d, COALESCE(SUM(amount_cents), 0) AS t
+             FROM donations WHERE status = 'paid'"
+        )->fetch(PDO::FETCH_ASSOC) ?: ['c' => 0, 'd' => 0, 't' => 0];
+
+        return $this->donationAggregate = [
+            'count'  => (int) $row['c'],
+            'donors' => (int) $row['d'],
+            'total'  => (int) $row['t'],
+        ];
+    }
+
+    /**
      * Count of donations that represent real money received.
      * Excludes pending, failed, and refunded rows — the dashboard is a
      * revenue view, not an attempt-funnel view.
      */
     public function donationCount(): int
     {
-        return $this->donationCount ??=
-            (int) $this->db->query("SELECT COUNT(*) FROM donations WHERE status = 'paid'")->fetchColumn();
+        return $this->donationAggregate()['count'];
     }
 
     /** Distinct donor count among successful donations (by email, case-insensitive). */
     public function donorCount(): int
     {
-        return $this->donorCount ??= (int) $this->db
-            ->query("SELECT COUNT(DISTINCT lower(email)) FROM donations WHERE status = 'paid'")
-            ->fetchColumn();
+        return $this->donationAggregate()['donors'];
     }
 
     /** Sum of donation amounts in cents, restricted to paid (non-refunded) rows. */
     public function totalDonationCents(): int
     {
-        return $this->totalDonationCents ??=
-            (int) $this->db
-                ->query("SELECT COALESCE(SUM(amount_cents), 0) FROM donations WHERE status = 'paid'")
-                ->fetchColumn();
+        return $this->donationAggregate()['total'];
     }
 
     /**
@@ -92,12 +109,12 @@ final class Metrics
     /**
      * Most recent donations, newest first. Capped at $limit rows.
      *
-     * @return list<array{order_id:string,contact_name:?string,email:string,amount_cents:int,currency:string,status:string,created_at:int,refunded_at:?int}>
+     * @return list<array{order_id:string,contact_name:?string,email:string,amount_cents:int,currency:string,status:string,created_at:int,refunded_at:?int,dedication:?string}>
      */
     public function recentDonations(int $limit = 10): array
     {
         $stmt = $this->db->prepare(
-            'SELECT order_id, contact_name, email, amount_cents, currency, status, created_at, refunded_at
+            'SELECT order_id, contact_name, email, amount_cents, currency, status, created_at, refunded_at, dedication
              FROM donations
              ORDER BY created_at DESC
              LIMIT :n'
@@ -118,6 +135,77 @@ final class Metrics
                 'status'       => (string) $r['status'],
                 'created_at'   => (int)    $r['created_at'],
                 'refunded_at'  => $r['refunded_at'] !== null ? (int) $r['refunded_at'] : null,
+                'dedication'   => $r['dedication'] !== null ? (string) $r['dedication'] : null,
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Fetch a single donation by order_id for the admin detail view.
+     *
+     * @return ?array{order_id:string,payment_intent_id:?string,contact_name:?string,email:string,amount_cents:int,currency:string,status:string,created_at:int,refunded_at:?int,dedication:?string}
+     */
+    public function findDonation(string $orderId): ?array
+    {
+        $stmt = $this->db->prepare(
+            'SELECT order_id, payment_intent_id, contact_name, email, amount_cents, currency, status,
+                    created_at, refunded_at, dedication
+             FROM donations WHERE order_id = :oid'
+        );
+        $stmt->execute([':oid' => $orderId]);
+        $r = $stmt->fetch();
+        if ($r === false) {
+            return null;
+        }
+        return [
+            'order_id'          => (string) $r['order_id'],
+            'payment_intent_id' => $r['payment_intent_id'] !== null ? (string) $r['payment_intent_id'] : null,
+            'contact_name'      => $r['contact_name'] !== null ? (string) $r['contact_name'] : null,
+            'email'             => (string) $r['email'],
+            'amount_cents'      => (int)    $r['amount_cents'],
+            'currency'          => (string) $r['currency'],
+            'status'            => (string) $r['status'],
+            'created_at'        => (int)    $r['created_at'],
+            'refunded_at'       => $r['refunded_at'] !== null ? (int) $r['refunded_at'] : null,
+            'dedication'        => $r['dedication'] !== null ? (string) $r['dedication'] : null,
+        ];
+    }
+
+    /**
+     * All paid donations in a [from, to) unix-second range, oldest-first so
+     * the CSV export streams in chronological order for bookkeeping.
+     *
+     * @return list<array{order_id:string,payment_intent_id:?string,contact_name:?string,email:string,amount_cents:int,currency:string,status:string,created_at:int,refunded_at:?int,dedication:?string}>
+     */
+    public function donationsInRange(int $fromTs, int $toTs): array
+    {
+        $stmt = $this->db->prepare(
+            'SELECT order_id, payment_intent_id, contact_name, email, amount_cents, currency, status,
+                    created_at, refunded_at, dedication
+             FROM donations
+             WHERE created_at >= :from AND created_at < :to
+             ORDER BY created_at ASC'
+        );
+        $stmt->bindValue(':from', $fromTs, PDO::PARAM_INT);
+        $stmt->bindValue(':to',   $toTs,   PDO::PARAM_INT);
+        $stmt->execute();
+        /** @var list<array<string,mixed>> $rows */
+        $rows = $stmt->fetchAll();
+
+        $out = [];
+        foreach ($rows as $r) {
+            $out[] = [
+                'order_id'          => (string) $r['order_id'],
+                'payment_intent_id' => $r['payment_intent_id'] !== null ? (string) $r['payment_intent_id'] : null,
+                'contact_name'      => $r['contact_name'] !== null ? (string) $r['contact_name'] : null,
+                'email'             => (string) $r['email'],
+                'amount_cents'      => (int)    $r['amount_cents'],
+                'currency'          => (string) $r['currency'],
+                'status'            => (string) $r['status'],
+                'created_at'        => (int)    $r['created_at'],
+                'refunded_at'       => $r['refunded_at'] !== null ? (int) $r['refunded_at'] : null,
+                'dedication'        => $r['dedication'] !== null ? (string) $r['dedication'] : null,
             ];
         }
         return $out;

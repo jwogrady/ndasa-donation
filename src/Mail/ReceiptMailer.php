@@ -66,7 +66,7 @@ final class ReceiptMailer
         );
     }
 
-    /** @param array{order_id:string,amount_cents:int,currency:string,email:string,name:string} $d */
+    /** @param array{order_id:string,amount_cents:int,currency:string,email:string,name:string,dedication?:string} $d */
     public function sendInternalNotification(array $d): void
     {
         $fromAddr = $_ENV['MAIL_FROM'] ?? '';
@@ -87,16 +87,21 @@ final class ReceiptMailer
         $amountUsd = number_format($d['amount_cents'] / 100, 2);
         $currency  = strtoupper($d['currency']);
 
+        $body = "A new donation was received.\n\n" .
+                "Order ID: {$d['order_id']}\n" .
+                "Amount:   \${$amountUsd} {$currency}\n" .
+                "Donor:    {$d['name']} <{$d['email']}>\n";
+
+        $dedication = (string) ($d['dedication'] ?? '');
+        if ($dedication !== '') {
+            $body .= "Dedication: {$dedication}\n";
+        }
+
         $email = (new Email())
             ->from(sprintf('%s <%s>', $fromName, $fromAddr))
             ->to($to)
             ->subject('New NDASA donation: $' . $amountUsd)
-            ->text(
-                "A new donation was received.\n\n" .
-                "Order ID: {$d['order_id']}\n" .
-                "Amount:   \${$amountUsd} {$currency}\n" .
-                "Donor:    {$d['name']} <{$d['email']}>\n"
-            );
+            ->text($body);
 
         $this->mailer->send($email);
     }

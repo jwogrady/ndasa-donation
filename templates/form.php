@@ -203,6 +203,17 @@ ob_start();
     <small id="email-help">Your receipt will be sent here.</small>
   </fieldset>
 
+  <fieldset>
+    <legend>Dedicate this gift <span class="muted">(optional)</span></legend>
+    <label for="dedication">
+      In memory of, in honor of, or on behalf of someone
+      <textarea id="dedication" name="dedication" rows="2" maxlength="200"
+        autocomplete="off"
+        placeholder="e.g. In memory of Jane Doe"><?= Html::h((string) ($values['dedication'] ?? '')) ?></textarea>
+    </label>
+    <small class="muted">Shown on the staff notification; not printed on the donor receipt.</small>
+  </fieldset>
+
   <fieldset class="fees">
     <legend>Cover the processing fee?</legend>
     <p class="fees__note">

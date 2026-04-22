@@ -16,6 +16,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../config/app.php';
 
 use NDASA\Admin\AppConfig;
+use NDASA\Admin\AuditLog;
 use NDASA\Admin\Auth as AdminAuth;
 use NDASA\Admin\EnvFile;
 use NDASA\Admin\HealthCheck as AdminHealthCheck;
@@ -59,6 +60,8 @@ try {
         $method === 'GET'  && $path === '/admin/config'       => render_admin_config(),
         $method === 'POST' && $path === '/admin/config'       => handle_admin_config(),
         $method === 'POST' && $path === '/admin/stripe-mode'  => handle_admin_stripe_mode(),
+        $method === 'GET'  && $path === '/admin/export'       => handle_admin_export(),
+        $method === 'GET'  && str_starts_with($path, '/admin/donations/') => render_admin_donation(substr($path, strlen('/admin/donations/'))),
         default => not_found(),
     };
 } catch (\Throwable $e) {
@@ -154,6 +157,7 @@ function handle_checkout(): void
             $input['email'],
             $input['fname'] . ' ' . $input['lname'],
             $orderId,
+            $input['dedication'],
         );
     } catch (\Stripe\Exception\ApiErrorException $e) {
         error_log('Stripe checkout create failed: ' . $e->getMessage());
@@ -227,16 +231,22 @@ function admin_editable_keys(): array
 }
 
 /**
- * Env vars that must be present for the app to run. Must stay in sync with the
- * fail-closed check in config/app.php.
+ * Env vars the admin panel treats as mandatory for the request-time admin
+ * flows. Must stay in sync with the fail-closed check in config/app.php.
+ *
+ * Stripe key/webhook pairs are intentionally excluded: bootstrap synthesizes
+ * $_ENV['STRIPE_SECRET_KEY'] / $_ENV['STRIPE_WEBHOOK_SECRET'] from the mode-
+ * specific pair (STRIPE_LIVE_* / STRIPE_TEST_*) at request time, so those two
+ * keys are always populated by the time the admin handler runs — the presence
+ * check here would always pass and mislead the operator. Bootstrap already
+ * fails closed if the selected mode's credentials are missing; the mode panel
+ * surfaces live-ready / test-ready explicitly.
  *
  * @return list<string>
  */
 function admin_required_keys(): array
 {
     return [
-        'STRIPE_SECRET_KEY',
-        'STRIPE_WEBHOOK_SECRET',
         'APP_URL',
         'DB_PATH',
         'MAIL_FROM',
@@ -311,7 +321,6 @@ function render_admin_dashboard(?string $flashOk = null, ?string $flashErr = nul
     $pageViews = $donationCount = $donorCount = $totalCents = 0;
     $conversionPct = 0.0;
     $recent = [];
-    $missingIndexes = ['idx_donations_created_at', 'idx_page_views_created_at'];
     $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
 
     try {
@@ -323,21 +332,29 @@ function render_admin_dashboard(?string $flashOk = null, ?string $flashErr = nul
         $totalCents    = $metrics->totalDonationCents();
         $conversionPct = $metrics->conversionRatePercent();
         $recent        = $metrics->recentDonations(10);
-        $missingIndexes = AdminHealthCheck::missingIndexes($db);
     } catch (\Throwable $e) {
         error_log('Admin dashboard metrics unavailable: ' . $e->getMessage());
     }
 
     // Target mode's credentials must be present before the toggle is offered,
     // or the flip would break the donor form on the next request.
-    $testReady = !empty($_ENV['STRIPE_TEST_SECRET_KEY']) && !empty($_ENV['STRIPE_TEST_WEBHOOK_SECRET']);
-    $liveReady = !empty($_ENV['STRIPE_LIVE_SECRET_KEY'] ?? $_ENV['STRIPE_SECRET_KEY'] ?? null)
-              && !empty($_ENV['STRIPE_LIVE_WEBHOOK_SECRET'] ?? $_ENV['STRIPE_WEBHOOK_SECRET'] ?? null);
+    $testReady = AppConfig::resolveStripeCredentials(AppConfig::MODE_TEST, $_ENV) !== null;
+    $liveReady = AppConfig::resolveStripeCredentials(AppConfig::MODE_LIVE, $_ENV) !== null;
 
     $missingRequired = admin_missing_required();
-    $health          = AdminHealthCheck::all();
+    // One probe populates both the grouped panel and the missing-index banner.
+    $healthAll       = AdminHealthCheck::all();
+    $health          = $healthAll['groups'];
+    $missingIndexes  = $healthAll['missing_indexes'];
     $appVersion      = AdminVersion::current();
     $csrf            = Csrf::token();
+
+    $auditEntries = [];
+    try {
+        $auditEntries = (new AuditLog(Database::connection()))->recent(20);
+    } catch (\Throwable $e) {
+        error_log('Audit read failed: ' . $e->getMessage());
+    }
 
     require __DIR__ . '/../templates/admin/dashboard.php';
 }
@@ -359,26 +376,22 @@ function handle_admin_stripe_mode(): void
     }
 
     // Refuse the flip if the target mode has no credentials in .env.
-    if ($target === AppConfig::MODE_TEST) {
-        if (empty($_ENV['STRIPE_TEST_SECRET_KEY']) || empty($_ENV['STRIPE_TEST_WEBHOOK_SECRET'])) {
-            render_admin_dashboard(flashErr: 'Test mode is not configured: set STRIPE_TEST_SECRET_KEY and STRIPE_TEST_WEBHOOK_SECRET in .env.');
-            return;
-        }
-    } else {
-        $liveSk = $_ENV['STRIPE_LIVE_SECRET_KEY']     ?? $_ENV['STRIPE_SECRET_KEY']     ?? '';
-        $liveWh = $_ENV['STRIPE_LIVE_WEBHOOK_SECRET'] ?? $_ENV['STRIPE_WEBHOOK_SECRET'] ?? '';
-        if ($liveSk === '' || $liveWh === '') {
-            render_admin_dashboard(flashErr: 'Live mode is not configured: set STRIPE_LIVE_SECRET_KEY and STRIPE_LIVE_WEBHOOK_SECRET in .env.');
-            return;
-        }
+    if (AppConfig::resolveStripeCredentials($target, $_ENV) === null) {
+        $msg = $target === AppConfig::MODE_TEST
+            ? 'Test mode is not configured: set STRIPE_TEST_SECRET_KEY and STRIPE_TEST_WEBHOOK_SECRET in .env.'
+            : 'Live mode is not configured: set STRIPE_LIVE_SECRET_KEY and STRIPE_LIVE_WEBHOOK_SECRET in .env.';
+        render_admin_dashboard(flashErr: $msg);
+        return;
     }
 
     try {
-        $cfg = new AppConfig(Database::connection());
+        $db = Database::connection();
+        $cfg = new AppConfig($db);
         $previous = $cfg->stripeMode();
         $cfg->set(AppConfig::STRIPE_MODE, $target);
-        $actor = $_SERVER['PHP_AUTH_USER'] ?? '?';
+        $actor = log_safe((string) ($_SERVER['PHP_AUTH_USER'] ?? '?'));
         error_log("NDASA: stripe_mode {$previous} -> {$target} by admin '{$actor}'");
+        (new AuditLog($db))->record($actor, 'stripe_mode', "{$previous} -> {$target}");
     } catch (\Throwable $e) {
         error_log('Stripe mode toggle failed: ' . $e->getMessage());
         render_admin_dashboard(flashErr: 'Could not save the mode change: ' . $e->getMessage());
@@ -476,12 +489,38 @@ function handle_admin_config(): void
     }
 
     $envPath = dirname(__DIR__) . '/.env';
+    $envFile = new EnvFile($envPath);
+
+    // Compute which keys actually changed so the audit log is useful rather
+    // than "every key, every save". Compare against the on-disk file (not
+    // $_ENV), so a field the operator leaves blank that was previously set
+    // shows up as a change.
+    $previous = $envFile->read();
+    $changed = [];
+    foreach ($updates as $k => $v) {
+        $before = (string) ($previous[$k] ?? '');
+        if ($before !== $v) {
+            $changed[] = $k;
+        }
+    }
+
     try {
-        (new EnvFile($envPath))->update($updates);
+        $envFile->update($updates);
     } catch (\Throwable $e) {
         error_log('Admin config write failed: ' . $e->getMessage());
         render_admin_config(flashErr: 'Could not save changes: ' . $e->getMessage());
         return;
+    }
+
+    if ($changed !== []) {
+        $actor = log_safe((string) ($_SERVER['PHP_AUTH_USER'] ?? '?'));
+        // Record which keys changed, never the values — secrets must not
+        // leak into the audit log.
+        (new AuditLog(Database::connection()))->record(
+            $actor,
+            'config_save',
+            'changed: ' . implode(', ', $changed),
+        );
     }
 
     render_admin_config(flashOk: 'Saved. A PHP-FPM reload may be required for changes to take effect.');
@@ -489,7 +528,7 @@ function handle_admin_config(): void
 
 /**
  * @param array<string, mixed> $post
- * @return array{fname:string,lname:string,email:string,amount:string,cover_fees:bool}
+ * @return array{fname:string,lname:string,email:string,amount:string,cover_fees:bool,dedication:string}
  */
 function validate_donor_input(array $post): array
 {
@@ -497,6 +536,11 @@ function validate_donor_input(array $post): array
     $lname = clean_name((string) ($post['lname'] ?? ''));
     $email = filter_var(trim((string) ($post['email'] ?? '')), FILTER_VALIDATE_EMAIL);
     $cover = (($post['cover_fees'] ?? 'no') === 'yes');
+    // Dedication is optional, capped at 200 chars; whitespace-only becomes empty.
+    // Strip CR/LF rather than rejecting — it's a user-facing free-text field
+    // where a stray newline shouldn't block the donation.
+    $dedication = trim(preg_replace('/[\r\n]+/', ' ', (string) ($post['dedication'] ?? '')) ?? '');
+    $dedication = mb_substr($dedication, 0, 200);
 
     // Prefer the free-form amount; fall back to a whitelisted preset so the form
     // remains fully functional without JavaScript. Anything else is ignored
@@ -527,6 +571,7 @@ function validate_donor_input(array $post): array
         'email'      => $email,
         'amount'     => $amount,
         'cover_fees' => $cover,
+        'dedication' => $dedication,
     ];
 }
 
@@ -543,4 +588,115 @@ function compute_charge_cents(string $amount, bool $coverFees): int
 function clean_name(string $v): string
 {
     return mb_substr(trim($v), 0, 100);
+}
+
+/**
+ * Sanitize an untrusted string for interpolation into error_log lines. Strips
+ * CR/LF so a crafted Authorization header (which controls $_SERVER['PHP_AUTH_USER'])
+ * cannot inject fake log entries that confuse log aggregators or alerting.
+ * Capped at 200 chars to keep runaway values from flooding syslog.
+ */
+function log_safe(string $v): string
+{
+    return mb_substr(str_replace(["\r", "\n", "\t"], ' ', $v), 0, 200);
+}
+
+/**
+ * Stream a CSV export of donations in a [from, to) window. Date inputs are
+ * YYYY-MM-DD (interpreted in APP_TIMEZONE, whole local days). Missing bounds
+ * default to "all time". Emits text/csv with no-cache headers.
+ */
+function handle_admin_export(): void
+{
+    $tz = new \DateTimeZone($_ENV['APP_TIMEZONE'] ?? 'UTC');
+
+    $fromRaw = (string) ($_GET['from'] ?? '');
+    $toRaw   = (string) ($_GET['to']   ?? '');
+
+    try {
+        $fromTs = $fromRaw !== ''
+            ? (new \DateTimeImmutable($fromRaw . ' 00:00:00', $tz))->getTimestamp()
+            : 0;
+        // Inclusive upper bound: add one day and use a half-open range below.
+        $toTs = $toRaw !== ''
+            ? (new \DateTimeImmutable($toRaw . ' 00:00:00', $tz))->modify('+1 day')->getTimestamp()
+            : PHP_INT_MAX;
+    } catch (\Exception $e) {
+        http_response_code(400);
+        render_error('Invalid date. Use YYYY-MM-DD for from and to.');
+        return;
+    }
+
+    try {
+        $rows = (new AdminMetrics(Database::connection()))->donationsInRange($fromTs, $toTs);
+    } catch (\Throwable $e) {
+        error_log('CSV export failed: ' . $e->getMessage());
+        http_response_code(500);
+        render_error('Could not build the export.');
+        return;
+    }
+
+    $suffix = ($fromRaw !== '' || $toRaw !== '')
+        ? '_' . ($fromRaw ?: 'all') . '_' . ($toRaw ?: 'all')
+        : '_' . date('Ymd');
+    $filename = 'ndasa-donations' . $suffix . '.csv';
+
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+
+    $out = fopen('php://output', 'w');
+    fputcsv($out, [
+        'created_at', 'order_id', 'payment_intent_id', 'name', 'email',
+        'amount', 'currency', 'status', 'dedication', 'refunded_at',
+    ]);
+    foreach ($rows as $r) {
+        fputcsv($out, [
+            gmdate('c', $r['created_at']),
+            $r['order_id'],
+            $r['payment_intent_id'] ?? '',
+            $r['contact_name'] ?? '',
+            $r['email'],
+            number_format($r['amount_cents'] / 100, 2, '.', ''),
+            strtoupper($r['currency']),
+            $r['status'],
+            $r['dedication'] ?? '',
+            $r['refunded_at'] !== null ? gmdate('c', $r['refunded_at']) : '',
+        ]);
+    }
+    fclose($out);
+}
+
+/**
+ * Admin donation detail page. Validates the order_id format before hitting
+ * the DB so a malformed URL short-circuits to 404 rather than leaking the
+ * query shape.
+ */
+function render_admin_donation(string $orderId): void
+{
+    // order_id is bin2hex(random_bytes(16)) = 32 lowercase hex chars.
+    if (!preg_match('/^[a-f0-9]{32}$/', $orderId)) {
+        not_found();
+        return;
+    }
+
+    try {
+        $donation = (new AdminMetrics(Database::connection()))->findDonation($orderId);
+    } catch (\Throwable $e) {
+        error_log('Donation detail lookup failed: ' . $e->getMessage());
+        http_response_code(500);
+        render_error('Could not load donation details.');
+        return;
+    }
+
+    if ($donation === null) {
+        not_found();
+        return;
+    }
+
+    $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
+    $appVersion = AdminVersion::current();
+
+    require __DIR__ . '/../templates/admin/donation.php';
 }

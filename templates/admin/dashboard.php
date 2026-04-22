@@ -28,6 +28,7 @@
  * @var string           $csrf             CSRF token for the mode-toggle form.
  * @var ?string          $flashOk          Success flash from the mode toggle.
  * @var ?string          $flashErr         Error flash from the mode toggle.
+ * @var list<array{id:int,actor:string,action:string,detail:?string,created_at:int}> $auditEntries
  */
 
 use NDASA\Support\Html;
@@ -132,6 +133,18 @@ ob_start();
 
 <h2>Recent Donations</h2>
 <div class="panel">
+  <form method="get" action="<?= Html::h(NDASA_BASE_PATH) ?>/admin/export" class="export-form">
+    <label>
+      <span class="label-text">From</span>
+      <input type="date" name="from" value="">
+    </label>
+    <label>
+      <span class="label-text">To</span>
+      <input type="date" name="to" value="">
+    </label>
+    <button type="submit">Export CSV</button>
+    <span class="help muted">Leave dates blank to export all donations.</span>
+  </form>
   <table>
     <thead>
       <tr>
@@ -151,12 +164,41 @@ ob_start();
                 ? $d['contact_name']
                 : $d['email'];
             $date = date('Y-m-d H:i', $d['created_at']);
+            $detailUrl = Html::h(NDASA_BASE_PATH) . '/admin/donations/' . Html::h($d['order_id']);
           ?>
           <tr>
-            <td><?= Html::h($date) ?></td>
-            <td><?= Html::h($name) ?></td>
+            <td><a href="<?= $detailUrl ?>"><?= Html::h($date) ?></a></td>
+            <td><a href="<?= $detailUrl ?>"><?= Html::h($name) ?></a></td>
             <td><?= Html::h($fmtMoney($d['amount_cents'], $d['currency'])) ?></td>
             <td><?= Html::h($d['status']) ?></td>
+          </tr>
+        <?php endforeach; ?>
+      <?php endif; ?>
+    </tbody>
+  </table>
+</div>
+
+<h2>Admin Activity</h2>
+<div class="panel">
+  <table>
+    <thead>
+      <tr>
+        <th>When</th>
+        <th>Actor</th>
+        <th>Action</th>
+        <th>Detail</th>
+      </tr>
+    </thead>
+    <tbody>
+      <?php if ($auditEntries === []): ?>
+        <tr class="empty"><td colspan="4">No admin activity recorded yet.</td></tr>
+      <?php else: ?>
+        <?php foreach ($auditEntries as $a): ?>
+          <tr>
+            <td><?= Html::h(date('Y-m-d H:i', $a['created_at'])) ?></td>
+            <td><?= Html::h($a['actor']) ?></td>
+            <td><?= Html::h($a['action']) ?></td>
+            <td class="muted"><?= $a['detail'] === null ? '' : Html::h($a['detail']) ?></td>
           </tr>
         <?php endforeach; ?>
       <?php endif; ?>

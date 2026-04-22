@@ -9,7 +9,15 @@ final class EventStore
 {
     public function __construct(private readonly PDO $db) {}
 
-    /** @return bool true if new, false if already processed */
+    /** Check whether this event has already been marked processed. */
+    public function isProcessed(string $eventId): bool
+    {
+        $stmt = $this->db->prepare('SELECT 1 FROM stripe_events WHERE id = ? LIMIT 1');
+        $stmt->execute([$eventId]);
+        return $stmt->fetchColumn() !== false;
+    }
+
+    /** @return bool true if newly inserted, false if already present */
     public function markProcessed(string $eventId, string $type): bool
     {
         $stmt = $this->db->prepare(
@@ -19,12 +27,13 @@ final class EventStore
         return $stmt->rowCount() === 1;
     }
 
-    /** @param array{order_id:string,payment_intent_id:string,amount_cents:int,currency:string,email:string,contact_name:string,status:string} $d */
+    /** @param array{order_id:string,payment_intent_id:string,amount_cents:int,currency:string,email:string,contact_name:string,status:string,dedication?:string} $d */
     public function recordDonation(array $d): void
     {
+        $dedication = (string) ($d['dedication'] ?? '');
         $this->db->prepare('INSERT OR IGNORE INTO donations
-            (order_id, payment_intent_id, amount_cents, currency, email, contact_name, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+            (order_id, payment_intent_id, amount_cents, currency, email, contact_name, status, created_at, dedication)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
             ->execute([
                 $d['order_id'],
                 $d['payment_intent_id'],
@@ -34,6 +43,7 @@ final class EventStore
                 $d['contact_name'],
                 $d['status'],
                 time(),
+                $dedication !== '' ? $dedication : null,
             ]);
     }
 

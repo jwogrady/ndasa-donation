@@ -30,7 +30,26 @@ final class DonationService
         string $email,
         string $contactName,
         string $orderId,
+        string $dedication = '',
     ): StripeSession {
+        $piMetadata = [
+            'order_id'     => $orderId,
+            'contact_name' => $contactName,
+        ];
+        // Stripe metadata values have a 500-char limit; our input cap is 200,
+        // so no extra truncation needed. Skip empty dedications rather than
+        // storing an empty string.
+        if ($dedication !== '') {
+            $piMetadata['dedication'] = $dedication;
+        }
+
+        // Mirror dedication onto the session too so the webhook handler can
+        // read it from session->metadata without an extra PI retrieve.
+        $sessionMetadata = ['order_id' => $orderId];
+        if ($dedication !== '') {
+            $sessionMetadata['dedication'] = $dedication;
+        }
+
         return StripeSession::create(
             [
                 'mode' => 'payment',
@@ -41,6 +60,7 @@ final class DonationService
                 'payment_method_types' => ['card'],
                 'customer_email'       => $email,
                 'client_reference_id'       => $orderId,
+                'metadata'                  => $sessionMetadata,
                 'line_items' => [[
                     'price_data' => [
                         'currency'     => self::CURRENCY,
@@ -52,10 +72,7 @@ final class DonationService
                 'payment_intent_data' => [
                     'description'   => 'NDASA Donation',
                     'receipt_email' => $email,
-                    'metadata'      => [
-                        'order_id'     => $orderId,
-                        'contact_name' => $contactName,
-                    ],
+                    'metadata'      => $piMetadata,
                 ],
                 'success_url' => $this->appUrl . '/success?sid={CHECKOUT_SESSION_ID}',
                 'cancel_url'  => $this->appUrl . '/?canceled=1',
