@@ -684,15 +684,39 @@ a:hover { color: var(--cta); }
   grid-template-columns: repeat(3, 1fr);
   gap: 0.75rem;
 }
+.impact__hint {
+  font-size: 0.85rem;
+  margin: 0 0 0.6rem;
+}
+/* Impact cards are <button> elements so the whole card is a single,
+   keyboard-accessible affordance. Reset button chrome and match the text-
+   alignment / typography of the legacy <li> version. */
 .impact-card {
+  display: block;
+  width: 100%;
+  text-align: left;
   background: #fff;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 0.9rem 1rem;
-  transition: box-shadow 200ms;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: box-shadow 200ms, border-color 200ms, transform 120ms;
 }
 .impact-card:hover {
   box-shadow: 2px 2px 5px 0 rgba(0, 0, 0, 0.12);
+  border-color: var(--brand);
+}
+.impact-card:active { transform: translateY(1px); }
+.impact-card:focus-visible {
+  outline: none;
+  border-color: var(--cta);
+  box-shadow: 0 0 0 3px rgba(250, 92, 30, 0.25);
+}
+.impact-card--default {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px rgba(98, 59, 153, 0.12);
 }
 .impact-card__amount {
   color: var(--brand);
@@ -702,6 +726,22 @@ a:hover { color: var(--cta); }
   margin-bottom: 0.25rem;
 }
 .impact-card p { margin: 0; font-size: 0.92rem; }
+
+/* Newsletter opt-in — sits below the email field, same fieldset */
+.email-optin {
+  margin-top: 0.75rem;
+  font-size: 0.92rem;
+  color: var(--body);
+}
+
+/* "Prefer to give monthly?" link — visible but quiet, below the CTA */
+.give-monthly {
+  margin: 0.75rem 0 0;
+  text-align: center;
+  font-size: 0.92rem;
+}
+.give-monthly a { color: var(--brand); text-decoration: underline; }
+.give-monthly a:hover { color: var(--cta); }
 
 /* Allocation bars */
 .allocation { margin: 1.5rem 0; }
@@ -734,10 +774,11 @@ a:hover { color: var(--cta); }
 .allocation-bars__fill--17 { width: 17%; }
 .allocation-bars__fill--5  { width: 5%; }
 
-/* Tax note, other-ways, stay-connected, contact-help */
+/* Tax note, other-ways, stay-connected, amplify, contact-help */
 .tax-note,
 .other-ways,
 .stay-connected,
+.amplify,
 .contact-help {
   margin: 2rem 0 0;
   padding-top: 1.5rem;
@@ -746,9 +787,49 @@ a:hover { color: var(--cta); }
 .tax-note h2,
 .other-ways h2,
 .stay-connected h2,
+.amplify h2,
 .contact-help h2 {
   margin-top: 0;
 }
+
+/* Success-page amplification block — share buttons and employer-match CTA */
+.amplify__block { margin: 1.25rem 0 0; }
+.amplify__block h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  color: var(--ink);
+}
+.amplify__block p { margin: 0 0 0.6rem; }
+
+.share-buttons {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.share {
+  display: inline-block;
+  padding: 0.55rem 0.9rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: #fff;
+  background: var(--brand);
+  transition: background 160ms, transform 120ms;
+}
+.share:hover { background: var(--brand-hover); color: #fff; }
+.share:active { transform: translateY(1px); }
+.share--twitter   { background: #111; }
+.share--facebook  { background: #1877f2; }
+.share--linkedin  { background: #0a66c2; }
+.share--email     { background: var(--cta); }
+.share--twitter:hover   { background: #000; color: #fff; }
+.share--facebook:hover  { background: #145ec2; color: #fff; }
+.share--linkedin:hover  { background: #084b8f; color: #fff; }
+.share--email:hover     { background: var(--cta-hover); color: #fff; }
 
 .other-ways__list,
 .stay-connected__list {
@@ -839,6 +920,19 @@ a:hover { color: var(--cta); }
   .impact-grid { grid-template-columns: 1fr; }
   h1 { font-size: 1.5rem; }
   .status { flex-direction: column; gap: 0.5rem; }
+
+  /* Form-first on mobile: donor sees the amount picker on the first scroll.
+     Impact and allocation sections move below the form to support the
+     undecided donor rather than gatekeep the ready-to-give one. CSS order
+     only affects visual flow; DOM order is preserved for screen readers. */
+  main.container { display: flex; flex-direction: column; }
+  main.container > .hero         { order: 1; }
+  main.container > .notice       { order: 2; }
+  main.container > .donation-form{ order: 3; }
+  main.container > .impact       { order: 4; }
+  main.container > .allocation   { order: 5; }
+  main.container > .tax-note     { order: 6; }
+  main.container > .other-ways   { order: 7; }
 }
 
 /* ——— Conversion patch 2: error notice, fee deltas, submit feedback ——— */

@@ -106,6 +106,10 @@ final class WebhookController
         // dedication on the PaymentIntent, not the session, so retrieve the
         // session with its metadata expanded. Safe to fall back to empty.
         $dedication = (string) ($session->metadata->dedication ?? '');
+        // email_optin is stored as '1' / '0' string in Stripe metadata to
+        // survive the JSON round-trip; absent = pre-optin-feature = unknown.
+        $emailOptinRaw = $session->metadata->email_optin ?? null;
+        $emailOptin = $emailOptinRaw === null ? null : ($emailOptinRaw === '1');
 
         if ($orderId === '' || $paymentIntentId === '' || $amountCents <= 0 || $email === '') {
             error_log('Incomplete paid session ' . ($session->id ?? '?'));
@@ -121,6 +125,7 @@ final class WebhookController
             'contact_name'      => $name,
             'status'            => 'paid',
             'dedication'        => $dedication,
+            'email_optin'       => $emailOptin,
         ]);
 
         // Stripe emails the donor via receipt_email; notify staff ourselves.

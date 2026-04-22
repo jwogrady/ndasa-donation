@@ -27,13 +27,14 @@ final class EventStore
         return $stmt->rowCount() === 1;
     }
 
-    /** @param array{order_id:string,payment_intent_id:string,amount_cents:int,currency:string,email:string,contact_name:string,status:string,dedication?:string} $d */
+    /** @param array{order_id:string,payment_intent_id:string,amount_cents:int,currency:string,email:string,contact_name:string,status:string,dedication?:string,email_optin?:?bool} $d */
     public function recordDonation(array $d): void
     {
         $dedication = (string) ($d['dedication'] ?? '');
+        $emailOptin = $d['email_optin'] ?? null;
         $this->db->prepare('INSERT OR IGNORE INTO donations
-            (order_id, payment_intent_id, amount_cents, currency, email, contact_name, status, created_at, dedication)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            (order_id, payment_intent_id, amount_cents, currency, email, contact_name, status, created_at, dedication, email_optin)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
             ->execute([
                 $d['order_id'],
                 $d['payment_intent_id'],
@@ -44,6 +45,7 @@ final class EventStore
                 $d['status'],
                 time(),
                 $dedication !== '' ? $dedication : null,
+                $emailOptin === null ? null : ($emailOptin ? 1 : 0),
             ]);
     }
 

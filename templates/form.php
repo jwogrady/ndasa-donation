@@ -46,7 +46,21 @@ if ($submittedAmount !== '') {
     $amountValue = '';
 }
 
-$coverFeesSticky = ($values['cover_fees'] ?? '') === 'yes';
+// Fee cover defaults to "yes" — the foundation nets the donor's intended
+// amount and the copy "so 100% of your gift funds our programs" becomes the
+// default framing rather than the opt-in alternative. Sticky re-renders still
+// honor what the donor actually selected.
+$hasCoverFeesSubmission = array_key_exists('cover_fees', $values);
+$coverFeesSticky = $hasCoverFeesSubmission
+    ? (($values['cover_fees'] ?? '') === 'yes')
+    : true;
+
+// Newsletter opt-in default. Pre-checked on a fresh render so we build the
+// donor list by default; re-renders respect the donor's last choice.
+$hasOptinSubmission = array_key_exists('email_optin', $values);
+$emailOptinSticky = $hasOptinSubmission
+    ? (($values['email_optin'] ?? '') === 'yes')
+    : true;
 
 $title = 'Donate — NDASA Foundation';
 
@@ -81,30 +95,37 @@ ob_start();
 
 <section class="impact" aria-labelledby="impact-heading">
   <h2 id="impact-heading">What your gift makes possible</h2>
+  <p class="muted impact__hint">Tap a card to pick that amount.</p>
   <ul class="impact-grid">
-    <li class="impact-card">
-      <div class="impact-card__amount">$25</div>
-      <p>
-        <!-- {{PLACEHOLDER: confirm specific impact}} -->
-        Provides prevention and awareness materials to one classroom or
-        community group.
-      </p>
+    <li>
+      <button type="button" class="impact-card" data-impact-amount="25"
+        aria-label="Choose $25 donation to provide clothing for an orphaned child">
+        <div class="impact-card__amount">$25</div>
+        <p>
+          Clothes an orphaned child for the season — warm essentials so
+          they stay in school and keep their dignity.
+        </p>
+      </button>
     </li>
-    <li class="impact-card">
-      <div class="impact-card__amount">$100</div>
-      <p>
-        <!-- {{PLACEHOLDER: confirm specific impact}} -->
-        Helps sponsor a first responder or community nonprofit with
-        training resources that directly reach people in crisis.
-      </p>
+    <li>
+      <button type="button" class="impact-card impact-card--default" data-impact-amount="100"
+        aria-label="Choose $100 donation to keep a child in school">
+        <div class="impact-card__amount">$100</div>
+        <p>
+          Keeps a child from a low-income family in school — tuition,
+          books, and supplies so lack of money never ends their education.
+        </p>
+      </button>
     </li>
-    <li class="impact-card">
-      <div class="impact-card__amount">$500</div>
-      <p>
-        <!-- {{PLACEHOLDER: confirm specific impact}} -->
-        Underwrites a student scholarship toward education focused on
-        substance-use prevention, treatment, or recovery.
-      </p>
+    <li>
+      <button type="button" class="impact-card" data-impact-amount="500"
+        aria-label="Choose $500 donation to help bring safe drinking water to a rural village">
+        <div class="impact-card__amount">$500</div>
+        <p>
+          Helps bring a well or filtration system to a rural village so
+          families have reliable access to safe drinking water.
+        </p>
+      </button>
     </li>
   </ul>
 </section>
@@ -201,6 +222,11 @@ ob_start();
         value="<?= Html::h((string) ($values['email'] ?? '')) ?>">
     </label>
     <small id="email-help">Your receipt will be sent here.</small>
+
+    <label class="inline email-optin">
+      <input type="checkbox" name="email_optin" value="yes" <?= $emailOptinSticky ? 'checked' : '' ?>>
+      Email me occasional updates about the impact of my gift.
+    </label>
   </fieldset>
 
   <fieldset>
@@ -241,6 +267,12 @@ ob_start();
     data-label-busy="Redirecting to secure checkout&hellip;">
     Donate securely &rarr;
   </button>
+
+  <p class="give-monthly">
+    <a href="mailto:info@ndasafoundation.org?subject=I%27d%20like%20to%20give%20monthly&amp;body=Hi%20NDASA%20Foundation%2C%0A%0AI%27d%20like%20to%20set%20up%20a%20recurring%20monthly%20donation.%20Please%20get%20in%20touch%20with%20details.%0A%0AThank%20you.">
+      Prefer to give monthly? Let us know &rarr;
+    </a>
+  </p>
 
   <p class="fineprint">
     <svg class="lock" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -375,6 +407,20 @@ ob_start();
         amount.value = el.value;
       }
       updateAll();
+    });
+  });
+
+  // Impact card click -> select matching preset, scroll form into view,
+  // update the total preview. Preserves the emotional commitment moment so
+  // the donor doesn't have to re-pick the amount they just decided on.
+  document.querySelectorAll('[data-impact-amount]').forEach((card) => {
+    card.addEventListener('click', () => {
+      const v = card.getAttribute('data-impact-amount');
+      const match = Array.from(presets).find((p) => p.value === v);
+      if (match) match.checked = true;
+      amount.value = v;
+      updateAll();
+      form.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
 

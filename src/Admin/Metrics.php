@@ -144,13 +144,13 @@ final class Metrics
     /**
      * Fetch a single donation by order_id for the admin detail view.
      *
-     * @return ?array{order_id:string,payment_intent_id:?string,contact_name:?string,email:string,amount_cents:int,currency:string,status:string,created_at:int,refunded_at:?int,dedication:?string}
+     * @return ?array{order_id:string,payment_intent_id:?string,contact_name:?string,email:string,amount_cents:int,currency:string,status:string,created_at:int,refunded_at:?int,dedication:?string,email_optin:?bool}
      */
     public function findDonation(string $orderId): ?array
     {
         $stmt = $this->db->prepare(
             'SELECT order_id, payment_intent_id, contact_name, email, amount_cents, currency, status,
-                    created_at, refunded_at, dedication
+                    created_at, refunded_at, dedication, email_optin
              FROM donations WHERE order_id = :oid'
         );
         $stmt->execute([':oid' => $orderId]);
@@ -169,6 +169,7 @@ final class Metrics
             'created_at'        => (int)    $r['created_at'],
             'refunded_at'       => $r['refunded_at'] !== null ? (int) $r['refunded_at'] : null,
             'dedication'        => $r['dedication'] !== null ? (string) $r['dedication'] : null,
+            'email_optin'       => $r['email_optin'] !== null ? ((int) $r['email_optin'] === 1) : null,
         ];
     }
 
@@ -176,13 +177,13 @@ final class Metrics
      * All paid donations in a [from, to) unix-second range, oldest-first so
      * the CSV export streams in chronological order for bookkeeping.
      *
-     * @return list<array{order_id:string,payment_intent_id:?string,contact_name:?string,email:string,amount_cents:int,currency:string,status:string,created_at:int,refunded_at:?int,dedication:?string}>
+     * @return list<array{order_id:string,payment_intent_id:?string,contact_name:?string,email:string,amount_cents:int,currency:string,status:string,created_at:int,refunded_at:?int,dedication:?string,email_optin:?bool}>
      */
     public function donationsInRange(int $fromTs, int $toTs): array
     {
         $stmt = $this->db->prepare(
             'SELECT order_id, payment_intent_id, contact_name, email, amount_cents, currency, status,
-                    created_at, refunded_at, dedication
+                    created_at, refunded_at, dedication, email_optin
              FROM donations
              WHERE created_at >= :from AND created_at < :to
              ORDER BY created_at ASC'
@@ -206,6 +207,7 @@ final class Metrics
                 'created_at'        => (int)    $r['created_at'],
                 'refunded_at'       => $r['refunded_at'] !== null ? (int) $r['refunded_at'] : null,
                 'dedication'        => $r['dedication'] !== null ? (string) $r['dedication'] : null,
+                'email_optin'       => $r['email_optin'] !== null ? ((int) $r['email_optin'] === 1) : null,
             ];
         }
         return $out;

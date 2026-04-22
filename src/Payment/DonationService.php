@@ -31,10 +31,12 @@ final class DonationService
         string $contactName,
         string $orderId,
         string $dedication = '',
+        bool $emailOptin = false,
     ): StripeSession {
         $piMetadata = [
             'order_id'     => $orderId,
             'contact_name' => $contactName,
+            'email_optin'  => $emailOptin ? '1' : '0',
         ];
         // Stripe metadata values have a 500-char limit; our input cap is 200,
         // so no extra truncation needed. Skip empty dedications rather than
@@ -43,9 +45,12 @@ final class DonationService
             $piMetadata['dedication'] = $dedication;
         }
 
-        // Mirror dedication onto the session too so the webhook handler can
-        // read it from session->metadata without an extra PI retrieve.
-        $sessionMetadata = ['order_id' => $orderId];
+        // Mirror dedication + optin onto the session too so the webhook handler
+        // can read them from session->metadata without an extra PI retrieve.
+        $sessionMetadata = [
+            'order_id'    => $orderId,
+            'email_optin' => $emailOptin ? '1' : '0',
+        ];
         if ($dedication !== '') {
             $sessionMetadata['dedication'] = $dedication;
         }

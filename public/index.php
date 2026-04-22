@@ -158,6 +158,7 @@ function handle_checkout(): void
             $input['fname'] . ' ' . $input['lname'],
             $orderId,
             $input['dedication'],
+            $input['email_optin'],
         );
     } catch (\Stripe\Exception\ApiErrorException $e) {
         error_log('Stripe checkout create failed: ' . $e->getMessage());
@@ -528,7 +529,7 @@ function handle_admin_config(): void
 
 /**
  * @param array<string, mixed> $post
- * @return array{fname:string,lname:string,email:string,amount:string,cover_fees:bool,dedication:string}
+ * @return array{fname:string,lname:string,email:string,amount:string,cover_fees:bool,dedication:string,email_optin:bool}
  */
 function validate_donor_input(array $post): array
 {
@@ -536,6 +537,10 @@ function validate_donor_input(array $post): array
     $lname = clean_name((string) ($post['lname'] ?? ''));
     $email = filter_var(trim((string) ($post['email'] ?? '')), FILTER_VALIDATE_EMAIL);
     $cover = (($post['cover_fees'] ?? 'no') === 'yes');
+    // Newsletter opt-in: a browser sends the checkbox value ('yes') only when
+    // checked. Absent/empty = opted out. Pre-checked default lives in the
+    // template; the server records whatever the donor actually submitted.
+    $emailOptin = (($post['email_optin'] ?? '') === 'yes');
     // Dedication is optional, capped at 200 chars; whitespace-only becomes empty.
     // Strip CR/LF rather than rejecting — it's a user-facing free-text field
     // where a stray newline shouldn't block the donation.
@@ -566,12 +571,13 @@ function validate_donor_input(array $post): array
     }
 
     return [
-        'fname'      => $fname,
-        'lname'      => $lname,
-        'email'      => $email,
-        'amount'     => $amount,
-        'cover_fees' => $cover,
-        'dedication' => $dedication,
+        'fname'       => $fname,
+        'lname'       => $lname,
+        'email'       => $email,
+        'amount'      => $amount,
+        'cover_fees'  => $cover,
+        'dedication'  => $dedication,
+        'email_optin' => $emailOptin,
     ];
 }
 
@@ -649,9 +655,10 @@ function handle_admin_export(): void
     $out = fopen('php://output', 'w');
     fputcsv($out, [
         'created_at', 'order_id', 'payment_intent_id', 'name', 'email',
-        'amount', 'currency', 'status', 'dedication', 'refunded_at',
+        'amount', 'currency', 'status', 'dedication', 'email_optin', 'refunded_at',
     ]);
     foreach ($rows as $r) {
+        $optin = $r['email_optin'];
         fputcsv($out, [
             gmdate('c', $r['created_at']),
             $r['order_id'],
@@ -662,6 +669,7 @@ function handle_admin_export(): void
             strtoupper($r['currency']),
             $r['status'],
             $r['dedication'] ?? '',
+            $optin === null ? '' : ($optin ? 'yes' : 'no'),
             $r['refunded_at'] !== null ? gmdate('c', $r['refunded_at']) : '',
         ]);
     }
