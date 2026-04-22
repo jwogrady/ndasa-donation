@@ -17,7 +17,6 @@ namespace NDASA\Mail;
 
 use Symfony\Component\Mailer\Mailer;
 use Symfony\Component\Mailer\Transport;
-use Symfony\Component\Mailer\Transport\Dsn;
 use Symfony\Component\Mime\Email;
 
 final class ReceiptMailer
@@ -26,27 +25,37 @@ final class ReceiptMailer
 
     public function __construct(?string $dsn = null)
     {
+        // Explicit DSN wins. Otherwise prefer SMTP_* / SMTP_DSN env config, and
+        // fall back to the local MTA via Symfony's sendmail transport so the
+        // webhook is never gated on a deliverable SMTP account. The sendmail
+        // path is what PHP's native mail() uses under the hood on Nexcess.
         $this->mailer = new Mailer(
             $dsn !== null
                 ? Transport::fromDsn($dsn)
-                : Transport::fromDsnObject(self::dsnFromEnv()),
+                : Transport::fromDsn(self::transportDsnFromEnv()),
         );
     }
 
     /**
-     * Prefer discrete SMTP_* components (safe with any password charset);
-     * fall back to a pre-formed SMTP_DSN for callers that provide one.
+     * Resolve a transport DSN from env, preferring (in order):
+     *   1. SMTP_DSN (pre-formed)
+     *   2. SMTP_HOST + friends (discrete SMTP_*)
+     *   3. sendmail://default — the local MTA, always present on Nexcess.
+     *
+     * Returning the sendmail fallback instead of throwing means a missing
+     * SMTP config degrades to "delivered via the MX of the server" rather
+     * than taking the caller (webhook) out.
      */
-    private static function dsnFromEnv(): Dsn
+    private static function transportDsnFromEnv(): string
     {
         $preformed = (string) ($_ENV['SMTP_DSN'] ?? '');
         if ($preformed !== '') {
-            return Dsn::fromString($preformed);
+            return $preformed;
         }
 
         $host = (string) ($_ENV['SMTP_HOST'] ?? '');
         if ($host === '') {
-            throw new \RuntimeException('SMTP not configured (set SMTP_HOST or SMTP_DSN).');
+            return 'sendmail://default';
         }
 
         $port = (int) ($_ENV['SMTP_PORT'] ?? 587);
@@ -57,13 +66,15 @@ final class ReceiptMailer
         // Symfony's smtp scheme = STARTTLS; smtps scheme = implicit TLS.
         $scheme = $enc === 'ssl' ? 'smtps' : 'smtp';
 
-        return new Dsn(
-            scheme:   $scheme,
-            host:     $host,
-            user:     $user !== '' ? $user : null,
-            password: $pass !== '' ? $pass : null,
-            port:     $port,
-        );
+        $auth = '';
+        if ($user !== '') {
+            $auth = rawurlencode($user);
+            if ($pass !== '') {
+                $auth .= ':' . rawurlencode($pass);
+            }
+            $auth .= '@';
+        }
+        return sprintf('%s://%s%s:%d', $scheme, $auth, $host, $port);
     }
 
     /** @param array{order_id:string,amount_cents:int,currency:string,email:string,name:string,dedication?:string} $d */
