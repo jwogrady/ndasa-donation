@@ -90,19 +90,27 @@ Or a pre-formed DSN that overrides the components:
 
 Component form is preferred because the password does not need URL-encoding.
 
+### Admin panel &mdash; required, always
+
+| Variable | Purpose |
+|---|---|
+| `ADMIN_USER` | HTTP Basic Auth username for every `/admin*` route. |
+| `ADMIN_PASS` | HTTP Basic Auth password. If either is empty, `/admin*` returns 500 rather than exposing the panel unauthenticated. |
+
 ### Optional
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `APP_ENV` | `production` | Set to anything other than `production` to disable HTTPS enforcement in local/test environments. |
 | `APP_TIMEZONE` | `UTC` | PHP `date_default_timezone_set()` value. |
+| `APP_VERSION` | empty | Explicit version string shown in the admin footer. Falls back to the short git hash, then to a hardcoded constant. |
 | `SESSION_NAME` | `ndasa_sess` | PHP session cookie name. |
 | `DONATION_MIN_CENTS` | `1000` | Minimum accepted donation in cents. |
 | `DONATION_MAX_CENTS` | `1000000` | Maximum accepted donation in cents. |
 | `TRUSTED_PROXIES` | empty | Comma-separated CIDRs / IPs of reverse proxies whose `X-Forwarded-For` header may be trusted. Leave empty if the app is directly connected. **Never** use a wildcard. |
 | `MAIL_FROM_NAME` | `NDASA Foundation` | Display name on outgoing staff notifications. |
 
-The bootstrap aborts with a 500 at startup if any **Required** variable is missing or empty. For SMTP, at least one of `SMTP_HOST` or `SMTP_DSN` must be set.
+The bootstrap aborts with a 500 at startup if any **Required** variable is missing or empty. For SMTP, at least one of `SMTP_HOST` or `SMTP_DSN` must be set. Missing `ADMIN_USER` or `ADMIN_PASS` does not abort startup but does take the admin panel offline.
 
 ### File permissions
 
@@ -155,7 +163,7 @@ The staff email contains the order ID, donation amount and currency, donor name,
 
 ## Source of truth
 
-The Stripe webhook is the system of record for every donation. The browser-facing session contains a non-sensitive "pending order" hint used only to improve the donor's confirmation page experience; it is not used for reconciliation, reporting, or any financial purpose.
+The Stripe webhook is the system of record for every donation. The browser-facing success page looks up its status via `Stripe\Checkout\Session::retrieve()` purely for the donor's confirmation message; reconciliation, reporting, and staff notification all run from verified webhook events. **The admin dashboard reads only from the local SQLite ledger; it never queries the Stripe API for metrics.**
 
 For each Stripe event, the application:
 
@@ -173,15 +181,61 @@ The "per-IP" identifier is resolved through `ClientIp`, which trusts `X-Forwarde
 
 ## Storage and reconciliation
 
-The application uses a single SQLite database at `DB_PATH`. On first connect the schema is created automatically with three tables:
+The application uses a single SQLite database at `DB_PATH`. On first connect the schema is created automatically with four tables plus two indexes:
 
-- **`donations`** &mdash; one row per completed donation. Keyed by `order_id` (PK) and `payment_intent_id` (UNIQUE). Fields: amount in cents, currency, donor email and name, status, created timestamp, optional refunded timestamp.
+- **`donations`** &mdash; one row per completed donation. Keyed by `order_id` (PK) and `payment_intent_id` (UNIQUE). Fields: amount in cents, currency, donor email and name, status (`paid` or `refunded`), created timestamp, optional refunded timestamp.
 - **`stripe_events`** &mdash; idempotency log keyed by Stripe event ID. Fields: event type, received timestamp.
 - **`rate_limit`** &mdash; fixed-window counters keyed by `"checkout:<ip>"`.
+- **`page_views`** &mdash; one row per GET to the donation page (throttled, see Metrics below). Fields: id, created timestamp.
+- **Indexes** &mdash; `idx_donations_created_at` and `idx_page_views_created_at` accelerate the dashboard's ORDER BY / LIMIT queries.
 
 For reconciliation, compare the local `donations` table against Stripe's own dashboard or a Stripe report. Any live Stripe charge without a corresponding local row is a processing miss and should be investigated (usually a webhook delivery failure).
 
 SQLite is configured with WAL journalling, enforced foreign keys, and a 5-second busy timeout. PDO uses real prepared statements (no string-concat SQL anywhere).
+
+## Admin panel
+
+The admin panel lives at `/admin`. All `/admin*` routes are gated by a single HTTP Basic Auth check that reads `ADMIN_USER` and `ADMIN_PASS` from the environment. The gate supports both the standard `$_SERVER['PHP_AUTH_USER']` pair and the `HTTP_AUTHORIZATION` fallback (for FastCGI / LiteSpeed setups that strip `PHP_AUTH_*`). Credentials are compared in constant time.
+
+There are two pages:
+
+- **`/admin`** &mdash; dashboard with stat cards, a 10-row recent-donations table, and a grouped System Health panel.
+- **`/admin/config`** &mdash; form that edits the four most-operationally-relevant env vars (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `APP_URL`, `MAIL_BCC_INTERNAL`). Saves are CSRF-protected and written atomically: values are validated, written to `.env.tmp`, then `rename()`d onto `.env` so a mid-write crash cannot leave a truncated file that bricks the fail-closed bootstrap.
+
+**Restart caveat.** The admin form updates `.env` on disk, but the running PHP-FPM workers have already loaded the old values into `$_ENV` at request-start and will continue to use them. A PHP-FPM reload (or a `touch` on an `.user.ini` where the platform supports that trigger) is required for new values to take effect. The admin panel flashes "A PHP-FPM reload may be required for changes to take effect" after every save as a reminder.
+
+## Metrics
+
+The dashboard shows four numbers and a table, all sourced from the local SQLite ledger.
+
+- **Page views** &mdash; count of rows in `page_views`. Each GET to `/` inserts one row, **throttled to at most one record per 30 seconds per session**. A refresh-happy donor or a bot with a cookie jar cannot inflate the count, but a new session on every request (no-cookie clients, unrelated browsers) will still count multiple views.
+- **Total Donations** &mdash; sum of `amount_cents` for rows with `status = 'paid'`. Refunded, pending, and failed rows are excluded so the dashboard shows actual revenue.
+- **Total Donors** &mdash; count of distinct lowercase `email` values among paid donations.
+- **Conversion Rate** &mdash; `paid-donation-count / page-views * 100`, rounded to one decimal place. Zero page views yields 0%.
+- **Recent Donations** &mdash; the ten most recent rows from `donations`, all statuses included. The status column is the place operators see refund activity.
+
+Each aggregate is memoised per request, so the full dashboard render produces at most one query per distinct aggregate.
+
+## System Health
+
+The dashboard renders three grouped panels:
+
+- **Database** &mdash; connection, presence of the `donations` / `page_views` / `stripe_events` tables, and presence of both expected indexes.
+- **Environment** &mdash; `.env` is writable, the SQLite file at `DB_PATH` is writable (or its parent directory is writable for first-run creation), and `storage/logs/` is writable.
+- **Configuration** &mdash; each of `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `APP_URL` is non-empty.
+
+Every probe is wrapped in a try/catch; a broken check reports FAIL with a human-readable detail string rather than crashing the page.
+
+## Known limitations
+
+- **Page-view counts are approximate.** The 30-second session throttle eliminates refresh inflation but does not filter bots that reject cookies (each request looks like a fresh session), nor bots that spoof unique sessions for every request. Treat the page-view figure as directional.
+- **No bot filtering** beyond the session throttle. There is no user-agent allowlist, no CAPTCHA, no third-party bot-detection service integrated. Stripe Radar handles the actual fraud side.
+- **No Stripe analytics sync.** The dashboard reads the local DB only. Metrics in the admin panel and in the Stripe dashboard can drift if a webhook delivery was dropped and never retried successfully. Periodic reconciliation against a Stripe report is the mitigation.
+- **Admin config changes are not live until PHP-FPM reloads.** The editor rewrites `.env` atomically but cannot force the running workers to re-read it.
+- **SQLite-backed rate limiter** is adequate for a single-host deployment. Multi-host or CDN-fronted deployments need a shared backend.
+- **Staff notification failures** are logged and swallowed; an SMTP outage during a donation surge silently drops notifications for the outage window (donations themselves are still recorded).
+- **Single-tenant.** Scoped to the NDASA Foundation; multi-tenant support is not in the current design.
+- **Recurring donations (subscriptions)** are out of scope.
 
 Direct shell access to the ledger, when needed:
 
@@ -261,10 +315,3 @@ If a deploy goes wrong:
 
 No database migration is required for rollbacks; the schema is append-only across releases.
 
-## Known limitations
-
-- The rate limiter is SQLite-backed and adequate for a single-host deployment. Multi-host or CDN-fronted deployments need a shared backend.
-- Staff notification failures are logged and swallowed; they do not trigger Stripe retries. An SMTP outage during a donation surge would silently drop notifications for the outage window.
-- There is no built-in admin UI. All reconciliation, refunds, and donor lookups are performed through the Stripe dashboard and direct SQLite access.
-- The application is single-tenant. It is scoped to the NDASA Foundation; multi-tenant support is not in the current design.
-- Recurring donations (subscriptions) are out of scope for the current release.

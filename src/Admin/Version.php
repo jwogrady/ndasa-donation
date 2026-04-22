@@ -19,20 +19,28 @@ namespace NDASA\Admin;
  * Resolve an app-version string for the admin UI.
  *
  * Preference order:
- *   1. Short git hash from .git/HEAD (seven characters), if the repo is
+ *   1. The APP_VERSION environment variable, if set to a non-empty value.
+ *      Deploy pipelines can inject a tag ("v1.2.0"), a build number, or
+ *      an image sha here to identify a running release unambiguously.
+ *   2. Short git hash from .git/HEAD (seven characters), if the repo is
  *      present and readable. No shell-outs; we parse the files directly.
- *   2. The static FALLBACK constant below.
+ *   3. The static FALLBACK constant below.
  *
  * Any failure along the way returns the fallback; this function must
  * never throw.
  */
 final class Version
 {
-    /** Static fallback when git metadata is not available (tarball / production copy). */
+    /** Static fallback when neither APP_VERSION nor git metadata is available. */
     public const FALLBACK = '1.0.0';
 
     public static function current(): string
     {
+        $explicit = trim((string) ($_ENV['APP_VERSION'] ?? ''));
+        if ($explicit !== '') {
+            return $explicit;
+        }
+
         try {
             $hash = self::gitShortHash();
             if ($hash !== null) {
