@@ -109,10 +109,6 @@ function handle_checkout(): void
         return;
     }
 
-    // Stash non-sensitive expectations for UX continuity only.
-    // The webhook is the system of record for reconciliation.
-    $_SESSION['pending_order'] = ['order_id' => $orderId, 'expected' => $cents];
-
     header('Location: ' . $session->url, true, 303);
 }
 

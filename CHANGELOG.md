@@ -4,6 +4,29 @@ All notable changes to the NDASA Donation Platform are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Each entry is traceable to one or more commits in the git history.
 
+## [Unreleased]
+
+Work that has landed on branches after `v1.0.0` but is not yet tagged for release.
+
+### Added
+
+- **Automatic Stripe payment methods.** `Checkout\Session::create` now uses `automatic_payment_methods`, so Card, Link, Apple Pay, Google Pay, and ACH Direct Debit surface automatically based on the Stripe dashboard configuration. No code change is required to enable or disable individual methods. _(`b048fd0`)_
+- **Asynchronous webhook handlers.** The webhook controller dispatches `checkout.session.async_payment_succeeded` and `checkout.session.async_payment_failed` for ACH and similar delayed-settlement flows. Sync and async success paths converge on a shared `recordPaidSession()` method, so the donation record is identical regardless of how the session cleared. _(`b048fd0`)_
+- **Subpath-aware routing.** The router strips the path prefix derived from `APP_URL` before matching, so deployments at `https://host/donation` route correctly. Deployments at the web root are unaffected. _(`b048fd0`)_
+- **SMTP configuration by components.** `ReceiptMailer` accepts either a pre-formed `SMTP_DSN` or discrete `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_ENCRYPTION` components. Using components removes the need to URL-encode passwords containing special characters. _(`b048fd0`)_
+- **Nexcess deployment kit** (`deploy/`). Idempotent installer plus `.htaccess`, shims, `.env` template, and a WordPress mu-plugin that lets the donation app share a single `.env` with the WordPress SMTP configuration. The application itself is unchanged; the kit is site-specific packaging. _(`ee3c8c6`)_
+- **Audience-separated documentation.** `README.md` is now a slim entrypoint. `docs/USER.md`, `docs/ADMIN.md`, and `docs/CONTRIBUTING.md` split the documentation by reader, each describing only the features relevant to its audience. _(`fb3293a`)_
+- **`LICENSE` and `TRIBUTE.md`.** Proprietary license naming the NDASA Foundation as copyright holder, William Cross as original author, and John O'Grady / Status26 Inc as maintainer; short tribute recognising the original authorship. _(`fb3293a`)_
+- **Branching and release workflow.** `docs/CONTRIBUTING.md` now documents the `master` + feature-branches + `release/vX.Y.Z` flow the project actually uses.
+
+### Changed
+
+- **PHPDoc authorship headers** added to the six entrypoints and core services (`config/app.php`, `public/index.php`, `public/webhook.php`, `src/Mail/ReceiptMailer.php`, `src/Payment/DonationService.php`, `src/Webhook/WebhookController.php`). No runtime effect. _(`b048fd0`)_
+
+### Removed
+
+- **Dead write to `$_SESSION['pending_order']`.** The front controller previously stored a non-sensitive "pending order" hint in the session for a UX purpose that was never implemented on the success page. The write is gone; `/success` has always relied on the Stripe session lookup for its messaging, so removing the dead write changes no observable behaviour.
+
 ## [1.0.0] &mdash; 2026-04-21
 
 Initial public release of the secure-rebuild donation platform. The release replaces a legacy donation application wholesale with a webhook-authoritative, PCI-SAQ-A-scoped design. All changes in this release were authored between `dc841cb` and `211e621` on the `master` branch (prior to the documentation and deployment branches).
@@ -43,6 +66,7 @@ Initial public release of the secure-rebuild donation platform. The release repl
 
 The `master` branch preserves three commits (`dc841cb`, `659b51b`, `c86e559`) and a breaking-change commit (`2b0b702`) that together record the import and removal of the legacy codebase. They are intentionally retained so that the security rationale for the rebuild is auditable from the history itself. The present `1.0.0` release is not derived from those trees; it is a ground-up rewrite.
 
-Changes made after `211e621` (payment-method expansion, async webhook handlers, subpath-aware routing, SMTP component configuration, deployment kit for Nexcess managed WordPress hosting, the audience-separated documentation set, and the `LICENSE` / `TRIBUTE.md` additions) are currently unreleased and sit on the working tree only; they will be rolled into the next release entry once tagged.
+Items in the `[Unreleased]` section above will be rolled into the next tagged release when that release is cut on a `release/vX.Y.Z` branch (see the branching workflow in [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)).
 
+[Unreleased]: https://github.com/jwogrady/ndasa-donation/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/jwogrady/ndasa-donation/releases/tag/v1.0.0

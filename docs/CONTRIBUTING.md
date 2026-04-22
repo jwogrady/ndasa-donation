@@ -147,6 +147,24 @@ Before proposing a release:
 3. Every env-var change is reflected in `.env.example` and in [ADMIN.md](ADMIN.md).
 4. The [CHANGELOG.md](../CHANGELOG.md) has an entry for the release under `## [X.Y.Z] — YYYY-MM-DD`, grouped into **Added** / **Changed** / **Removed** / **Security** as appropriate. Every entry must be traceable to a commit in the range.
 
+## Branching and release workflow
+
+The project uses a simple, linear flow. It is intentionally minimal &mdash; the repository is small and has a single maintainer, so heavier branching models are not warranted.
+
+- **`master`** is the integration branch. It always reflects shippable code. Do not commit directly to `master`; land work there only via a reviewed pull request.
+- **Feature / fix branches** &mdash; all new work starts on a short-lived branch named after the concern: `feat/<short-name>`, `fix/<short-name>`, `chore/<short-name>`, `docs/<short-name>`. Open a pull request back to `master` when the work is ready.
+- **Release branches** &mdash; each release gets its own `release/vX.Y.Z` branch, cut from `master` at the intended release point. Final release-tightening (CHANGELOG finalisation, version bumps, last-pass regression testing) happens on the release branch. When the release branch is ready, it is merged into `master` and tagged as `vX.Y.Z` from the resulting commit.
+- **Hotfixes** &mdash; urgent production fixes branch from the release tag as `hotfix/vX.Y.(Z+1)`, land via PR, are merged back to `master`, and are tagged.
+
+The test commands and release checklist above apply on both feature branches (before opening the PR) and on release branches (before tagging).
+
+Conventions that keep the flow honest:
+
+- One concern per branch, one concern per PR.
+- Rebase onto the latest `master` before requesting review; prefer a clean, linear history over merge commits on feature branches.
+- Delete the branch after merge. Branch names are cheap; stale ones are noise.
+- Tags are authoritative. A release that is not tagged did not happen.
+
 ## Submitting changes
 
 ### Issues
