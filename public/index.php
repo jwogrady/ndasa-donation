@@ -159,6 +159,7 @@ function handle_checkout(): void
             $orderId,
             $input['dedication'],
             $input['email_optin'],
+            $input['interval'],
         );
     } catch (\Stripe\Exception\ApiErrorException $e) {
         error_log('Stripe checkout create failed: ' . $e->getMessage());
@@ -180,11 +181,32 @@ function render_success(): void
     }
 
     // Look up the session so we can show a truthful message for async payment
-    // methods (ACH/Bacs) where 'paid' arrives later via webhook.
+    // methods (ACH/Bacs) where 'paid' arrives later via webhook, and so we
+    // know whether this was a subscription signup (mint a Customer Portal
+    // link for cancel/manage).
     $paymentStatus = 'unknown';
+    $interval      = null;   // 'month' | 'year' | null
+    $portalUrl     = null;
     try {
         $session = \Stripe\Checkout\Session::retrieve($sid);
         $paymentStatus = (string) ($session->payment_status ?? 'unknown');
+        $metaInterval  = (string) ($session->metadata->interval ?? 'once');
+        if ($metaInterval === 'month' || $metaInterval === 'year') {
+            $interval = $metaInterval;
+        }
+        $customerId = (string) ($session->customer ?? '');
+        if ($interval !== null && $customerId !== '') {
+            try {
+                $portal = (new DonationService(rtrim($_ENV['APP_URL'], '/')))
+                    ->createPortalSession($customerId, '/success?sid=' . urlencode($sid));
+                $portalUrl = (string) $portal->url;
+            } catch (\Throwable $e) {
+                // Portal not enabled in the Stripe dashboard, or other failure.
+                // Degrade gracefully — the receipt email still lets the donor
+                // cancel by contacting us.
+                error_log('Customer Portal session create failed: ' . $e->getMessage());
+            }
+        }
     } catch (\Throwable $e) {
         error_log('Success page session lookup failed: ' . $e->getMessage());
     }
@@ -529,7 +551,7 @@ function handle_admin_config(): void
 
 /**
  * @param array<string, mixed> $post
- * @return array{fname:string,lname:string,email:string,amount:string,cover_fees:bool,dedication:string,email_optin:bool}
+ * @return array{fname:string,lname:string,email:string,amount:string,cover_fees:bool,dedication:string,email_optin:bool,interval:string}
  */
 function validate_donor_input(array $post): array
 {
@@ -541,6 +563,10 @@ function validate_donor_input(array $post): array
     // checked. Absent/empty = opted out. Pre-checked default lives in the
     // template; the server records whatever the donor actually submitted.
     $emailOptin = (($post['email_optin'] ?? '') === 'yes');
+    // Frequency. Default 'once' for any unknown / missing value so a
+    // malformed submission can never accidentally set up a subscription.
+    $intervalIn = (string) ($post['interval'] ?? 'once');
+    $interval = in_array($intervalIn, ['once', 'month', 'year'], true) ? $intervalIn : 'once';
     // Dedication is optional, capped at 200 chars; whitespace-only becomes empty.
     // Strip CR/LF rather than rejecting — it's a user-facing free-text field
     // where a stray newline shouldn't block the donation.
@@ -578,6 +604,7 @@ function validate_donor_input(array $post): array
         'cover_fees'  => $cover,
         'dedication'  => $dedication,
         'email_optin' => $emailOptin,
+        'interval'    => $interval,
     ];
 }
 
@@ -654,8 +681,9 @@ function handle_admin_export(): void
 
     $out = fopen('php://output', 'w');
     fputcsv($out, [
-        'created_at', 'order_id', 'payment_intent_id', 'name', 'email',
-        'amount', 'currency', 'status', 'dedication', 'email_optin', 'refunded_at',
+        'created_at', 'order_id', 'payment_intent_id', 'subscription_id',
+        'name', 'email', 'amount', 'currency', 'status', 'interval',
+        'dedication', 'email_optin', 'refunded_at',
     ]);
     foreach ($rows as $r) {
         $optin = $r['email_optin'];
@@ -663,11 +691,13 @@ function handle_admin_export(): void
             gmdate('c', $r['created_at']),
             $r['order_id'],
             $r['payment_intent_id'] ?? '',
+            $r['stripe_subscription_id'] ?? '',
             $r['contact_name'] ?? '',
             $r['email'],
             number_format($r['amount_cents'] / 100, 2, '.', ''),
             strtoupper($r['currency']),
             $r['status'],
+            $r['interval'] ?? 'once',
             $r['dedication'] ?? '',
             $optin === null ? '' : ($optin ? 'yes' : 'no'),
             $r['refunded_at'] !== null ? gmdate('c', $r['refunded_at']) : '',

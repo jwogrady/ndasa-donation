@@ -69,6 +69,21 @@ final class Database
             // column (their consent is genuinely unknown, not "no").
             $pdo->exec('ALTER TABLE donations ADD COLUMN email_optin INTEGER');
         }
+        if (!isset($existingCols['interval'])) {
+            // 'month', 'year', or NULL for one-time. Every row in a recurring
+            // series shares the same interval value; the signup row and each
+            // subsequent invoice.paid create new rows linked by
+            // stripe_subscription_id.
+            $pdo->exec('ALTER TABLE donations ADD COLUMN "interval" TEXT');
+        }
+        if (!isset($existingCols['stripe_subscription_id'])) {
+            $pdo->exec('ALTER TABLE donations ADD COLUMN stripe_subscription_id TEXT');
+        }
+        if (!isset($existingCols['stripe_customer_id'])) {
+            // Captured on subscription signup so we can mint Customer Portal
+            // sessions for the donor to cancel/manage from the success page.
+            $pdo->exec('ALTER TABLE donations ADD COLUMN stripe_customer_id TEXT');
+        }
         $pdo->exec('CREATE TABLE IF NOT EXISTS rate_limit (
             key TEXT PRIMARY KEY,
             count INTEGER NOT NULL,
@@ -97,6 +112,7 @@ final class Database
         // once the tables have any real volume.
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_donations_created_at ON donations(created_at)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_donations_status      ON donations(status)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_donations_subscription ON donations(stripe_subscription_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_page_views_created_at ON page_views(created_at)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_admin_audit_created_at ON admin_audit(created_at)');
     }

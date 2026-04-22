@@ -1,7 +1,15 @@
 <?php
-/** @var string $paymentStatus */
+/**
+ * @var string  $paymentStatus
+ * @var ?string $interval   'month' | 'year' | null (one-time)
+ * @var ?string $portalUrl  Customer Portal URL for managing the subscription
+ */
 
 use NDASA\Support\Html;
+
+$interval  ??= null;
+$portalUrl ??= null;
+$isRecurring = $interval !== null;
 
 $title = 'Thank you — NDASA Foundation';
 
@@ -84,6 +92,32 @@ ob_start();
     </div>
   <?php endif; ?>
 </section>
+
+<?php if ($isRecurring && $paymentStatus === 'paid'): ?>
+<section class="recurring-note" aria-label="Recurring donation details">
+  <p>
+    <strong>You've started a <?= $interval === 'month' ? 'monthly' : 'yearly' ?> donation.</strong>
+    Your card will be charged automatically every <?= Html::h($interval) ?> starting today.
+    You can pause, change, or cancel any time — we'll never charge you more than you've signed up for.
+  </p>
+  <?php if ($portalUrl !== null): ?>
+    <p>
+      <a class="btn btn--secondary" href="<?= Html::h($portalUrl) ?>" rel="noopener">
+        Manage or cancel this donation &rarr;
+      </a>
+    </p>
+    <p class="muted fineprint">
+      This link opens Stripe's secure donor portal. Bookmark it or keep your
+      receipt email — the link is unique to you.
+    </p>
+  <?php else: ?>
+    <p class="muted fineprint">
+      To change or cancel this donation, reply to your receipt email or
+      contact <a href="mailto:info@ndasafoundation.org">info@ndasafoundation.org</a>.
+    </p>
+  <?php endif; ?>
+</section>
+<?php endif; ?>
 
 <section class="next-steps" aria-labelledby="next-heading">
   <h2 id="next-heading">What happens next</h2>

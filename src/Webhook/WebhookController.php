@@ -53,6 +53,9 @@ final class WebhookController
                 'checkout.session.async_payment_failed'    => $this->onAsyncPaymentFailed($event->data->object),
                 'charge.refunded'                          => $this->onRefund($event->data->object),
                 'payment_intent.payment_failed'            => $this->onPaymentFailed($event->data->object),
+                'invoice.paid'                             => $this->onInvoicePaid($event->data->object),
+                'invoice.payment_failed'                   => $this->onInvoicePaymentFailed($event->data->object),
+                'customer.subscription.deleted'            => $this->onSubscriptionDeleted($event->data->object),
                 default                                    => null,
             };
         } catch (\Throwable $e) {
@@ -96,6 +99,8 @@ final class WebhookController
     {
         $orderId         = (string) ($session->client_reference_id ?? '');
         $paymentIntentId = (string) ($session->payment_intent ?? '');
+        $subscriptionId  = (string) ($session->subscription ?? '');
+        $customerId      = (string) ($session->customer ?? '');
         $amountCents     = (int)    ($session->amount_total ?? 0);
         $currency        = (string) ($session->currency ?? 'usd');
         $email           = (string) (($session->customer_details->email ?? null)
@@ -110,22 +115,33 @@ final class WebhookController
         // survive the JSON round-trip; absent = pre-optin-feature = unknown.
         $emailOptinRaw = $session->metadata->email_optin ?? null;
         $emailOptin = $emailOptinRaw === null ? null : ($emailOptinRaw === '1');
+        // interval: 'once' (or absent) = NULL in DB; 'month'/'year' = recurring.
+        $intervalRaw = (string) ($session->metadata->interval ?? 'once');
+        $interval = in_array($intervalRaw, ['month', 'year'], true) ? $intervalRaw : null;
 
-        if ($orderId === '' || $paymentIntentId === '' || $amountCents <= 0 || $email === '') {
+        // Subscription sessions don't carry a payment_intent on the session
+        // itself — the PI lives on the invoice. One-time sessions must have
+        // one or we refuse to record the row.
+        $isSubscription = $subscriptionId !== '';
+        if ($orderId === '' || $amountCents <= 0 || $email === ''
+            || (!$isSubscription && $paymentIntentId === '')) {
             error_log('Incomplete paid session ' . ($session->id ?? '?'));
             return;
         }
 
         $this->store->recordDonation([
-            'order_id'          => $orderId,
-            'payment_intent_id' => $paymentIntentId,
-            'amount_cents'      => $amountCents,
-            'currency'          => $currency,
-            'email'             => $email,
-            'contact_name'      => $name,
-            'status'            => 'paid',
-            'dedication'        => $dedication,
-            'email_optin'       => $emailOptin,
+            'order_id'               => $orderId,
+            'payment_intent_id'      => $paymentIntentId !== '' ? $paymentIntentId : null,
+            'amount_cents'           => $amountCents,
+            'currency'               => $currency,
+            'email'                  => $email,
+            'contact_name'           => $name,
+            'status'                 => 'paid',
+            'interval'               => $interval,
+            'stripe_subscription_id' => $subscriptionId !== '' ? $subscriptionId : null,
+            'stripe_customer_id'     => $customerId !== '' ? $customerId : null,
+            'dedication'             => $dedication,
+            'email_optin'            => $emailOptin,
         ]);
 
         // Stripe emails the donor via receipt_email; notify staff ourselves.
@@ -155,5 +171,120 @@ final class WebhookController
     private function onPaymentFailed(object $pi): void
     {
         error_log('Webhook: payment failed for PI ' . ($pi->id ?? '?'));
+    }
+
+    /**
+     * invoice.paid fires for both the first charge of a new subscription
+     * (alongside checkout.session.completed) AND every subsequent recurring
+     * charge. For the first one, the session handler already recorded a row
+     * keyed by order_id — we skip here if that row exists. For every
+     * recurring charge after the first, we mint a synthetic order_id from
+     * the invoice id so the PK stays unique.
+     */
+    private function onInvoicePaid(object $invoice): void
+    {
+        $subscriptionId = (string) ($invoice->subscription ?? '');
+        if ($subscriptionId === '') {
+            // Not a subscription invoice (one-off invoices from the dashboard,
+            // etc.) — out of scope for this app.
+            return;
+        }
+
+        $invoiceId  = (string) ($invoice->id ?? '');
+        $amountPaid = (int)    ($invoice->amount_paid ?? 0);
+        $currency   = (string) ($invoice->currency ?? 'usd');
+        $customerId = (string) ($invoice->customer ?? '');
+        $email      = (string) ($invoice->customer_email ?? '');
+        $name       = (string) ($invoice->customer_name ?? '');
+        $piId       = (string) ($invoice->payment_intent ?? '');
+
+        if ($invoiceId === '' || $amountPaid <= 0 || $email === '') {
+            error_log('Webhook: invoice.paid missing required fields (invoice ' . $invoiceId . ')');
+            return;
+        }
+
+        // First invoice of a new subscription: the session handler owns the
+        // row. If it exists, no-op — we're the redundant sibling event.
+        //
+        // Stripe puts metadata.donation_first_invoice_order_id on the
+        // subscription (set at creation via subscription_data.metadata), so
+        // we retrieve the subscription to find the signup row's order_id.
+        $signupOrderId = null;
+        try {
+            $subscription = \Stripe\Subscription::retrieve($subscriptionId);
+            $signupOrderId = (string) ($subscription->metadata->order_id ?? '') ?: null;
+        } catch (\Throwable $e) {
+            error_log('Webhook: could not retrieve subscription ' . $subscriptionId . ': ' . $e->getMessage());
+            // Fall through — we can still record a row keyed by invoice id.
+        }
+
+        if ($signupOrderId !== null && $this->store->donationExists($signupOrderId)) {
+            // This is the first invoice and the session handler already
+            // recorded the row. Check: did it get recorded without a PI
+            // (subscription mode omits it on the session)? Backfill the PI
+            // on the existing row would require a new setter on EventStore;
+            // skipping for now — the Stripe dashboard is authoritative for
+            // PI lookup and we link out via subscription_id from the admin.
+            return;
+        }
+
+        // Subsequent recurring charge. Use the invoice id as a deterministic,
+        // unique order_id so retries stay idempotent via the PK.
+        $orderId = 'inv_' . $invoiceId;
+
+        $this->store->recordDonation([
+            'order_id'               => $orderId,
+            'payment_intent_id'      => $piId !== '' ? $piId : null,
+            'amount_cents'           => $amountPaid,
+            'currency'               => $currency,
+            'email'                  => $email,
+            'contact_name'           => $name,
+            'status'                 => 'paid',
+            'interval'               => $this->intervalFromInvoice($invoice),
+            'stripe_subscription_id' => $subscriptionId,
+            'stripe_customer_id'     => $customerId !== '' ? $customerId : null,
+            'dedication'             => '',
+            'email_optin'            => null,
+        ]);
+    }
+
+    /**
+     * invoice.payment_failed — card declined, expired, etc. Stripe's
+     * retry/dunning flow handles recovery; we just log so the operator has
+     * visibility in app.log.
+     */
+    private function onInvoicePaymentFailed(object $invoice): void
+    {
+        $subId = (string) ($invoice->subscription ?? '?');
+        $iid   = (string) ($invoice->id ?? '?');
+        error_log("Webhook: invoice.payment_failed sub={$subId} inv={$iid}");
+    }
+
+    /**
+     * Donor cancelled (or Stripe cancelled after exhausting retries). Past
+     * paid invoices stay paid; we only mark any non-paid pending rows as
+     * cancelled. Historical revenue is untouched.
+     */
+    private function onSubscriptionDeleted(object $subscription): void
+    {
+        $id = (string) ($subscription->id ?? '');
+        if ($id === '') {
+            return;
+        }
+        $this->store->markSubscriptionCancelled($id);
+        error_log("Webhook: subscription {$id} cancelled");
+    }
+
+    /** Extract 'month' | 'year' | null from an invoice's first line. */
+    private function intervalFromInvoice(object $invoice): ?string
+    {
+        $lines = $invoice->lines->data ?? [];
+        foreach ($lines as $line) {
+            $interval = (string) ($line->price->recurring->interval ?? '');
+            if ($interval === 'month' || $interval === 'year') {
+                return $interval;
+            }
+        }
+        return null;
     }
 }

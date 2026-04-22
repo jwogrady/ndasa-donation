@@ -62,6 +62,15 @@ $emailOptinSticky = $hasOptinSubmission
     ? (($values['email_optin'] ?? '') === 'yes')
     : true;
 
+// Frequency — default "once" on a fresh render. The donor explicitly opts
+// in to a recurring charge by picking Monthly or Annual. Defaulting to
+// recurring would be hostile; defaulting to once and prompting for the
+// upgrade via a visible toggle is the standard and the expected pattern.
+$submittedInterval = (string) ($values['interval'] ?? '');
+$selectedInterval = in_array($submittedInterval, ['month', 'year'], true)
+    ? $submittedInterval
+    : 'once';
+
 $title = 'Donate — NDASA Foundation';
 
 ob_start();
@@ -156,6 +165,26 @@ ob_start();
 
 <form class="donation-form" method="post" action="<?= Html::h(NDASA_BASE_PATH) ?>/checkout" novalidate>
   <input type="hidden" name="<?= Html::h(Csrf::FIELD) ?>" value="<?= Html::h($csrf) ?>">
+
+  <fieldset class="frequency-group">
+    <legend>How often?</legend>
+    <div class="frequency" role="radiogroup" aria-label="Donation frequency">
+      <?php foreach ([
+        ['once',  'One-time'],
+        ['month', 'Monthly'],
+        ['year',  'Yearly'],
+      ] as [$val, $label]): ?>
+        <label class="frequency__opt">
+          <input type="radio" name="interval" value="<?= Html::h($val) ?>" data-interval
+            <?= $selectedInterval === $val ? 'checked' : '' ?>>
+          <span><?= Html::h($label) ?></span>
+        </label>
+      <?php endforeach; ?>
+    </div>
+    <small id="frequency-help" class="muted">
+      Monthly and yearly donations renew automatically; you can cancel any time.
+    </small>
+  </fieldset>
 
   <fieldset class="amount-group">
     <legend>Choose an amount <span class="req" aria-hidden="true">*</span></legend>
@@ -268,12 +297,6 @@ ob_start();
     Donate securely &rarr;
   </button>
 
-  <p class="give-monthly">
-    <a href="mailto:info@ndasafoundation.org?subject=I%27d%20like%20to%20give%20monthly&amp;body=Hi%20NDASA%20Foundation%2C%0A%0AI%27d%20like%20to%20set%20up%20a%20recurring%20monthly%20donation.%20Please%20get%20in%20touch%20with%20details.%0A%0AThank%20you.">
-      Prefer to give monthly? Let us know &rarr;
-    </a>
-  </p>
-
   <p class="fineprint">
     <svg class="lock" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
     You will be redirected to Stripe's secure checkout. Card details are entered
@@ -339,15 +362,20 @@ ob_start();
     maxCents:      <?= (int) $maxCents ?>,
   };
 
-  const form     = document.querySelector('.donation-form');
-  const amount   = document.getElementById('amount');
-  const presets  = document.querySelectorAll('input[data-preset]');
-  const other    = document.querySelector('input[data-preset][value="other"]');
-  const fees     = document.querySelectorAll('input[name="cover_fees"]');
-  const total    = document.getElementById('total-preview');
-  const feeSpan  = document.getElementById('fee-delta');
-  const feeYes   = document.getElementById('fee-delta-yes');
-  const submit   = document.getElementById('donation-submit');
+  const form      = document.querySelector('.donation-form');
+  const amount    = document.getElementById('amount');
+  const presets   = document.querySelectorAll('input[data-preset]');
+  const other     = document.querySelector('input[data-preset][value="other"]');
+  const fees      = document.querySelectorAll('input[name="cover_fees"]');
+  const intervals = document.querySelectorAll('input[data-interval]');
+  const total     = document.getElementById('total-preview');
+  const feeSpan   = document.getElementById('fee-delta');
+  const feeYes    = document.getElementById('fee-delta-yes');
+  const submit    = document.getElementById('donation-submit');
+
+  const getInterval = () =>
+    document.querySelector('input[data-interval]:checked')?.value || 'once';
+  const intervalNoun = (i) => i === 'month' ? 'monthly' : i === 'year' ? 'yearly' : '';
 
   const fmt = (cents) =>
     '$' + (cents / 100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -367,9 +395,10 @@ ob_start();
     const base = parseAmount();
     const cover = document.querySelector('input[name="cover_fees"]:checked')?.value === 'yes';
     const delta = base > 0 ? grossUp(base) - base : 0;
+    const interval = getInterval();
+    const recurring = interval !== 'once';
+    const noun = intervalNoun(interval);  // '', 'monthly', 'yearly'
 
-    // Fee copy: live dollar amount. When base is 0 we can't compute the
-    // per-donation delta; show a stable approximation ("about $3.50 on $100").
     if (feeSpan) {
       feeSpan.textContent = base > 0 ? fmt(delta) : fmt(grossUp(10000) - 10000);
     }
@@ -377,24 +406,26 @@ ob_start();
       feeYes.textContent = base > 0 ? fmt(delta) : 'the fee';
     }
 
-    // Total preview: confident dollar figure or a stable zero-state.
     if (total) {
       if (base === 0) {
         total.textContent = 'Enter an amount above to see what your card will be charged.';
       } else {
         const charged = cover ? grossUp(base) : base;
+        const suffix = recurring ? ` every ${interval}` : '';
         total.textContent = cover
-          ? `Your card will be charged ${fmt(charged)} so we receive ${fmt(base)} after fees.`
-          : `Your card will be charged ${fmt(charged)}.`;
+          ? `Your card will be charged ${fmt(charged)}${suffix} so we receive ${fmt(base)} after fees.`
+          : `Your card will be charged ${fmt(charged)}${suffix}.`;
       }
     }
 
-    // Dynamic CTA. Shows the donor's *intended* amount (not grossed-up),
-    // which is the number they care about.
     if (submit && !submit.disabled) {
-      submit.innerHTML = base === 0
-        ? submit.dataset.labelEmpty
-        : `Donate ${fmt(base)} securely &rarr;`;
+      if (base === 0) {
+        submit.innerHTML = submit.dataset.labelEmpty;
+      } else if (recurring) {
+        submit.innerHTML = `Give ${fmt(base)} ${noun} &rarr;`;
+      } else {
+        submit.innerHTML = `Donate ${fmt(base)} securely &rarr;`;
+      }
     }
   };
 
@@ -440,6 +471,7 @@ ob_start();
   });
 
   fees.forEach((el) => el.addEventListener('change', updateAll));
+  intervals.forEach((el) => el.addEventListener('change', updateAll));
 
   // Submit feedback: disable the button, swap label, show spinner.
   // Network latency between /checkout and Stripe Checkout is 300–1500ms on
