@@ -1,97 +1,53 @@
-# NDASA Donation
+# NDASA Donation Platform
 
-Secure Stripe Checkout donation flow. PCI-DSS **SAQ-A** &mdash; no card data ever touches this server.
+A webhook-authoritative online donation application for the **NDASA Foundation**, built on Stripe Checkout. All card data is entered on Stripe's hosted page; this application never sees or stores a payment card number.
 
-## Requirements
+## What it does
 
-- PHP 8.2+ with `pdo_sqlite`, `openssl`, `mbstring`, `curl`
-- Composer 2.x
-- A Stripe account (live + test modes)
-- SMTP credentials or an API mail provider (SendGrid / SES / etc.)
+- Accepts one-time donations from any web browser.
+- Offers preset amounts ($25, $50, $100, $250, $500) and free-form custom amounts, within configurable bounds.
+- Optionally grosses up the charge so the foundation receives the full intended amount after Stripe's fees.
+- Uses Stripe's hosted Checkout for payment entry &mdash; Card, Link, Apple Pay, Google Pay, and ACH surface automatically based on the Stripe account configuration.
+- Treats the Stripe webhook as the system of record; browser redirects are used only for the donor's own confirmation message.
+- Sends the donor a receipt (via Stripe) and notifies staff of each completed gift (via the application's own mail transport).
 
-## Install
+## Who this is for
+
+This repository contains three audience-specific documents. Start with the one that matches your role.
+
+- [**docs/USER.md**](docs/USER.md) &mdash; for donors and staff who explain the donation flow to donors. Describes what happens on the page, what the three success states mean, and what to expect for receipts.
+- [**docs/ADMIN.md**](docs/ADMIN.md) &mdash; for webmasters and operators. Installation on Nexcess managed WordPress hosting, environment variables, Stripe webhook registration, SMTP configuration, rate-limit and security settings, reconciliation and monitoring notes.
+- [**docs/CONTRIBUTING.md**](docs/CONTRIBUTING.md) &mdash; for developers working on the codebase. Repository structure, local development, testing, coding conventions, and release discipline.
+
+Supporting documents:
+
+- [**CHANGELOG.md**](CHANGELOG.md) &mdash; release history, grounded in the actual git commit record.
+- [**LICENSE**](LICENSE) &mdash; proprietary licence; all rights assigned to the NDASA Foundation.
+- [**TRIBUTE.md**](TRIBUTE.md) &mdash; recognition of the project's original author.
+
+## Getting started in one minute
+
+If you are simply evaluating the project:
 
 ```sh
-composer install --no-dev --optimize-autoloader
+git clone git@github.com:jwogrady/ndasa-donation.git
+cd ndasa-donation
+composer install
 cp .env.example .env
-# edit .env with real secrets — chmod 600, owned by the web user
+php -S 127.0.0.1:8000 -t public    # then open http://127.0.0.1:8000/
 ```
 
-**Commit `composer.lock`.** Reproducible installs and `composer audit` both depend on it.
+This will give you the donation form. To actually create a Checkout session you will need Stripe test-mode keys in `.env` &mdash; see [docs/ADMIN.md](docs/ADMIN.md) for full configuration, or [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for the local-development workflow.
 
-## Web server
+## Authors
 
-Point DocumentRoot at `public/`. The app will not work correctly if it is pointed at the repo root &mdash; `src/`, `config/`, `.env`, and the SQLite DB must not be web-reachable.
+- **William Cross** &mdash; Original Author. Established the initial donation application and the foundational work that this platform continues.
+- **John O'Grady** (`jwogrady`, `john@status26.com`) &mdash; Maintainer, operating through **Status26 Inc**. Responsible for the current secure rebuild and ongoing maintenance.
 
-### nginx
+## Ownership
 
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name ndasafoundation.org;
-    root /var/www/ndasa-donation/public;
-    index index.php;
+All right, title, and interest in this software are assigned to the **NDASA Foundation** (<https://ndasafoundation.org/>). Use, modification, and distribution are governed by the terms of the [LICENSE](LICENSE).
 
-    location / {
-        try_files $uri /index.php?$query_string;
-    }
+## Acknowledgment
 
-    # Explicit webhook route — no rewrite, no session.
-    location = /webhook.php {
-        include fastcgi_params;
-        fastcgi_pass unix:/run/php/php8.2-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME $document_root/webhook.php;
-    }
-
-    location ~ \.php$ {
-        include fastcgi_params;
-        fastcgi_pass unix:/run/php/php8.2-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME $document_root/index.php;
-    }
-
-    # Defence in depth — these should already be outside the root.
-    location ~ /\.(env|git) { deny all; return 404; }
-}
-```
-
-### Apache
-
-An `.htaccess` in `public/` denies dotfiles and sensitive extensions.
-
-## Behind a CDN / proxy
-
-Set `TRUSTED_PROXIES` in `.env` to the CIDRs of your edge (e.g. Cloudflare, ALB). Leave empty if direct-connected &mdash; never use a wildcard.
-
-## Webhook
-
-In Stripe dashboard &rarr; Developers &rarr; Webhooks, add an endpoint:
-
-- URL: `https://<host>/webhook.php`
-- Events: `checkout.session.completed`, `charge.refunded`, `payment_intent.payment_failed`
-
-Copy the resulting `whsec_…` into `STRIPE_WEBHOOK_SECRET`.
-
-## Routes
-
-| Method | Path          | Purpose                           |
-|--------|---------------|-----------------------------------|
-| GET    | `/`           | Donation form                     |
-| POST   | `/checkout`   | Validate, create Checkout Session |
-| GET    | `/success`    | Post-redirect thanks page         |
-| POST   | `/webhook.php`| Stripe event receiver             |
-
-## Local development
-
-```sh
-php -S 127.0.0.1:8000 -t public
-stripe listen --forward-to http://127.0.0.1:8000/webhook.php
-```
-
-Use Stripe **test mode** keys in `.env`. Enable Stripe Radar in the dashboard for card-testing protection.
-
-## Tests
-
-```sh
-composer test
-composer audit
-```
+This platform exists because of William Cross's foundational contribution. The present codebase is a secure rebuild that preserves the purpose and intent of his original work. It is maintained in his honor. See [TRIBUTE.md](TRIBUTE.md).
