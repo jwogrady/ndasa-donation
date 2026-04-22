@@ -107,14 +107,32 @@ final class HealthCheck
     /** @return list<array{label:string,ok:bool,detail:?string}> */
     private static function configurationChecks(): array
     {
+        // Must stay in sync with the fail-closed check in config/app.php.
+        $required = [
+            'STRIPE_SECRET_KEY',
+            'STRIPE_WEBHOOK_SECRET',
+            'APP_URL',
+            'DB_PATH',
+            'MAIL_FROM',
+            'MAIL_BCC_INTERNAL',
+        ];
         $out = [];
-        foreach (['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'APP_URL'] as $key) {
+        foreach ($required as $key) {
             $out[] = self::row(
                 "Env: {$key}",
                 !empty($_ENV[$key]),
                 null,
             );
         }
+
+        // SMTP is required but satisfied by either a DSN or components.
+        $smtpOk = !empty($_ENV['SMTP_DSN']) || !empty($_ENV['SMTP_HOST']);
+        $out[] = self::row(
+            'Env: SMTP (DSN or HOST)',
+            $smtpOk,
+            $smtpOk ? null : 'Set SMTP_DSN, or SMTP_HOST plus the SMTP_* components.',
+        );
+
         return $out;
     }
 

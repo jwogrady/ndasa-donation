@@ -10,6 +10,7 @@
  * @var string               $csrf            CSRF token value for the hidden input.
  * @var array<string>        $missingRequired Required env vars currently empty.
  * @var string               $appVersion      Resolved app version string.
+ * @var array<string,int>    $requiredKeys    Set (keys) of env vars that must not be empty.
  */
 
 use NDASA\Http\Csrf;
@@ -49,16 +50,41 @@ ob_start();
     <?php foreach ($fields as $key): ?>
       <?php
         $isSecret = str_contains($key, 'SECRET') || str_contains($key, 'PASS');
-        $type = $isSecret ? 'password' : ($key === 'APP_URL' ? 'url' : ($key === 'MAIL_BCC_INTERNAL' ? 'email' : 'text'));
+        $isRequired = isset($requiredKeys[$key]);
+        $value = $values[$key] ?? '';
+
+        $type = match (true) {
+            $isSecret                                          => 'password',
+            $key === 'APP_URL'                                 => 'url',
+            $key === 'MAIL_FROM', $key === 'MAIL_BCC_INTERNAL' => 'email',
+            $key === 'SMTP_PORT',
+            $key === 'DONATION_MIN_CENTS',
+            $key === 'DONATION_MAX_CENTS'                      => 'number',
+            default                                            => 'text',
+        };
       ?>
       <label>
-        <span class="label-text"><?= Html::h($key) ?></span>
-        <input
-          type="<?= Html::h($type) ?>"
-          name="<?= Html::h($key) ?>"
-          value="<?= Html::h($values[$key] ?? '') ?>"
-          <?= $isSecret ? 'autocomplete="new-password"' : '' ?>
-        >
+        <span class="label-text">
+          <?= Html::h($key) ?><?php if ($isRequired): ?> <span class="req" aria-label="required">*</span><?php endif; ?>
+        </span>
+        <?php if ($key === 'SMTP_ENCRYPTION'): ?>
+          <select name="<?= Html::h($key) ?>">
+            <?php foreach (['', 'tls', 'ssl'] as $opt): ?>
+              <option value="<?= Html::h($opt) ?>"<?= $opt === $value ? ' selected' : '' ?>>
+                <?= $opt === '' ? '(not set)' : Html::h($opt) ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+        <?php else: ?>
+          <input
+            type="<?= Html::h($type) ?>"
+            name="<?= Html::h($key) ?>"
+            value="<?= Html::h($value) ?>"
+            <?= $isSecret ? 'autocomplete="new-password"' : '' ?>
+            <?= $isRequired ? 'required' : '' ?>
+            <?= $type === 'number' ? 'min="1" step="1" inputmode="numeric"' : '' ?>
+          >
+        <?php endif; ?>
         <?php if (!empty($descriptions[$key])): ?>
           <span class="help"><?= Html::h($descriptions[$key]) ?></span>
         <?php endif; ?>

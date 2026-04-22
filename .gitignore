@@ -1,5 +1,6 @@
 /.env
 /.env.local
+/.env.prod
 /deploy/.env.production
 /vendor/
 /node_modules/
