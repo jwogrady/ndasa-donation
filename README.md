@@ -45,6 +45,14 @@ This will give you the donation form. To actually create a Checkout session you 
 - Protected by HTTP Basic Auth.
 - Credentials are set via `ADMIN_USER` and `ADMIN_PASS` in `.env`.
 - A minimal config editor at `/admin/config` can update the Stripe keys, `APP_URL`, and `MAIL_BCC_INTERNAL`. A PHP-FPM reload may be required for changes to take full effect.
+- Config POSTs are CSRF-protected using the same per-session token mechanism the donation form uses.
+
+### Dashboard Metrics
+
+- **Page views** are counted per GET request to `/` (the donation page).
+- **Donations** are sourced from webhook-verified records in the local SQLite ledger; the Stripe API is not queried.
+- **Conversion rate** = donations &divide; page views, expressed as a percentage rounded to one decimal place. Zero page views yields 0%.
+- **Recent donations** shows the ten most recent rows, newest first.
 
 ## Authors
 

@@ -17,6 +17,7 @@ require_once __DIR__ . '/../config/app.php';
 
 use NDASA\Admin\Auth as AdminAuth;
 use NDASA\Admin\EnvFile;
+use NDASA\Admin\Metrics as AdminMetrics;
 use NDASA\Http\ClientIp;
 use NDASA\Http\Csrf;
 use NDASA\Http\RateLimiter;
@@ -65,6 +66,10 @@ try {
 
 function render_form(): void
 {
+    // Best-effort page-view tracking for the admin dashboard. A failure here
+    // must not prevent the donation form from rendering.
+    AdminMetrics::recordPageView(Database::connection());
+
     $csrf     = Csrf::token();
     $canceled = isset($_GET['canceled']);
     require __DIR__ . '/../templates/form.php';
@@ -174,8 +179,36 @@ function admin_editable_keys(): array
     ];
 }
 
+/** @return list<string> Env vars that must be present for the app to run. */
+function admin_required_keys(): array
+{
+    return ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'APP_URL'];
+}
+
+/** @return list<string> Required keys that are currently empty. */
+function admin_missing_required(): array
+{
+    $missing = [];
+    foreach (admin_required_keys() as $k) {
+        if (empty($_ENV[$k])) {
+            $missing[] = $k;
+        }
+    }
+    return $missing;
+}
+
 function render_admin_dashboard(): void
 {
+    $metrics = new AdminMetrics(Database::connection());
+
+    $pageViews       = $metrics->pageViewCount();
+    $donationCount   = $metrics->donationCount();
+    $donorCount      = $metrics->donorCount();
+    $totalCents      = $metrics->totalDonationCents();
+    $conversionPct   = $metrics->conversionRatePercent();
+    $recent          = $metrics->recentDonations(10);
+    $missingRequired = admin_missing_required();
+
     require __DIR__ . '/../templates/admin/dashboard.php';
 }
 
@@ -199,11 +232,23 @@ function render_admin_config(?string $flashOk = null, ?string $flashErr = null):
         'MAIL_BCC_INTERNAL'     => 'Address that receives a notification email for each completed donation.',
     ];
 
+    $csrf            = Csrf::token();
+    $missingRequired = admin_missing_required();
+
     require __DIR__ . '/../templates/admin/config.php';
 }
 
 function handle_admin_config(): void
 {
+    // Basic Auth does not prevent CSRF — browsers auto-send credentials.
+    // Validate the same CSRF token the donation form uses.
+    $token = $_POST[Csrf::FIELD] ?? null;
+    if (!is_string($token) || !Csrf::validate($token)) {
+        http_response_code(400);
+        render_admin_config(flashErr: 'Your session expired or the request was invalid. Please try again.');
+        return;
+    }
+
     $fields  = admin_editable_keys();
     $updates = [];
 
