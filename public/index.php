@@ -1,4 +1,16 @@
 <?php
+/**
+ * NDASA Donation Platform
+ *
+ * @package    NDASA\Donation
+ * @author     William Cross
+ * @author     John O'Grady <john@status26.com>
+ * @copyright  2026 NDASA Foundation
+ * @license    Proprietary - NDASA Foundation
+ * @link       https://ndasafoundation.org/
+ *
+ * Maintained in honor of William Cross.
+ */
 declare(strict_types=1);
 
 require_once __DIR__ . '/../config/app.php';
@@ -17,6 +29,13 @@ $path   = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
 // Strip a leading "/index.php" if the web server didn't rewrite.
 if (str_starts_with($path, '/index.php')) {
     $path = substr($path, strlen('/index.php')) ?: '/';
+}
+
+// Subpath deployments: strip the path prefix derived from APP_URL so the
+// router below can compare against "/", "/checkout", "/success".
+$basePath = rtrim(parse_url($_ENV['APP_URL'] ?? '', PHP_URL_PATH) ?? '', '/');
+if ($basePath !== '' && str_starts_with($path, $basePath)) {
+    $path = substr($path, strlen($basePath)) ?: '/';
 }
 
 try {
