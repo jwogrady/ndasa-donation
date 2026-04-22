@@ -33,9 +33,13 @@ final class DonationService
     ): StripeSession {
         return StripeSession::create(
             [
-                'mode'                      => 'payment',
-                'automatic_payment_methods' => ['enabled' => true],
-                'customer_email'            => $email,
+                'mode' => 'payment',
+                // Stripe rejects automatic_payment_methods on this account with
+                // parameter_unknown despite the dahlia API pin — the account
+                // lacks the dashboard-side payment-method configuration that
+                // automatic_payment_methods requires. Explicit list always works.
+                'payment_method_types' => ['card'],
+                'customer_email'       => $email,
                 'client_reference_id'       => $orderId,
                 'line_items' => [[
                     'price_data' => [
