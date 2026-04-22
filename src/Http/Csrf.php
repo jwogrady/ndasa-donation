@@ -40,9 +40,19 @@ final class Csrf
     /**
      * Mint a fresh token. Call this on a fresh form render so a successful
      * POST does not reuse a token that is already known outside the session.
+     *
+     * Also regenerates the underlying PHP session ID so a pre-checkout ID that
+     * may have leaked (e.g. through physical access or a future XSS bypass of
+     * CSP) cannot be used to drive the donor's next attempt. Safe to call on
+     * every fresh render; PHP deletes the old session file immediately.
      */
     public static function rotate(): void
     {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            // true = delete old session file, avoiding orphan records and
+            // closing the "old ID is still valid" window.
+            @session_regenerate_id(true);
+        }
         $_SESSION['csrf'] = bin2hex(random_bytes(32));
     }
 }
