@@ -142,26 +142,6 @@ ob_start();
 <form class="donation-form" method="post" action="<?= Html::h(NDASA_BASE_PATH) ?>/checkout" novalidate>
   <input type="hidden" name="<?= Html::h(Csrf::FIELD) ?>" value="<?= Html::h($csrf) ?>">
 
-  <fieldset class="frequency-group">
-    <legend>How often?</legend>
-    <div class="frequency" role="radiogroup" aria-label="Donation frequency">
-      <?php foreach ([
-        ['once',  'One-time'],
-        ['month', 'Monthly'],
-        ['year',  'Yearly'],
-      ] as [$val, $label]): ?>
-        <label class="frequency__opt">
-          <input type="radio" name="interval" value="<?= Html::h($val) ?>" data-interval
-            <?= $selectedInterval === $val ? 'checked' : '' ?>>
-          <span><?= Html::h($label) ?></span>
-        </label>
-      <?php endforeach; ?>
-    </div>
-    <small id="frequency-help" class="muted">
-      Monthly and yearly donations renew automatically; you can cancel any time.
-    </small>
-  </fieldset>
-
   <fieldset class="amount-group">
     <legend>Choose an amount <span class="req" aria-hidden="true">*</span></legend>
 
@@ -204,6 +184,28 @@ ob_start();
       Minimum $<?= Html::h($minDollars) ?>. Maximum $<?= Html::h(number_format($maxCents / 100, 0, '.', ',')) ?> per transaction.
     </small>
   </fieldset>
+
+  <fieldset class="frequency-group">
+    <legend>How often?</legend>
+    <div class="frequency" role="radiogroup" aria-label="Donation frequency">
+      <?php foreach ([
+        ['once',  'One-time'],
+        ['month', 'Monthly'],
+        ['year',  'Yearly'],
+      ] as [$val, $label]): ?>
+        <label class="frequency__opt">
+          <input type="radio" name="interval" value="<?= Html::h($val) ?>" data-interval
+            <?= $selectedInterval === $val ? 'checked' : '' ?>>
+          <span><?= Html::h($label) ?></span>
+        </label>
+      <?php endforeach; ?>
+    </div>
+    <small id="frequency-help" class="muted">
+      Monthly and yearly donations renew automatically; you can cancel any time.
+    </small>
+  </fieldset>
+
+  <p id="total-preview" class="total-preview" aria-live="polite"></p>
 
   <fieldset>
     <legend>Your details</legend>
@@ -263,8 +265,6 @@ ob_start();
       </label>
     </div>
   </fieldset>
-
-  <p id="total-preview" class="total-preview" aria-live="polite"></p>
 
   <button type="submit" id="donation-submit" class="btn btn--primary"
     data-label-ready="Donate securely &rarr;"
@@ -417,11 +417,12 @@ ob_start();
     });
   });
 
-  // Impact card click -> select matching preset, scroll form into view,
-  // update the total preview, and visually mark the chosen card. Preserves
-  // the emotional commitment moment so the donor doesn't have to re-pick
-  // the amount they just decided on.
+  // Impact card click -> select matching preset, scroll the *frequency*
+  // block into view (that's the donor's next real decision — one-time,
+  // monthly, or yearly — and skipping past it into the amount field
+  // would lose a conversion), update the preview, mark the card selected.
   const impactCards = document.querySelectorAll('[data-impact-amount]');
+  const frequencyBlock = document.querySelector('.frequency-group') || form;
 
   const markImpactSelected = (value) => {
     impactCards.forEach((c) => {
@@ -437,7 +438,10 @@ ob_start();
       amount.value = v;
       markImpactSelected(v);
       updateAll();
-      form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Scroll the frequency fieldset to the top of the viewport. Amount
+      // picker stays visible just below so the donor sees their choice
+      // confirmed. No forced focus — keyboard users stay in tab order.
+      frequencyBlock.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
 
