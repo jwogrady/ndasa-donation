@@ -1,72 +1,50 @@
 # Changelog
 
-All notable changes to the NDASA Donation Platform are documented in this file.
+All notable changes to the NDASA Donation Platform are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Each entry is traceable to one or more commits in the git history.
+## 1.0.0 &mdash; 2026-04-21
 
-## [Unreleased]
-
-Work that has landed on branches after `v1.0.0` but is not yet tagged for release.
+Initial public release of the secure-rebuild donation platform. Replaces the legacy donation application wholesale with a webhook-authoritative design that keeps card data off the server and treats Stripe as the single source of truth. Adds a Basic-Auth-protected admin panel with a metrics dashboard, a safe `.env` config editor, and a grouped System Health view.
 
 ### Added
 
-- **Automatic Stripe payment methods.** `Checkout\Session::create` now uses `automatic_payment_methods`, so Card, Link, Apple Pay, Google Pay, and ACH Direct Debit surface automatically based on the Stripe dashboard configuration. No code change is required to enable or disable individual methods. _(`b048fd0`)_
-- **Asynchronous webhook handlers.** The webhook controller dispatches `checkout.session.async_payment_succeeded` and `checkout.session.async_payment_failed` for ACH and similar delayed-settlement flows. Sync and async success paths converge on a shared `recordPaidSession()` method, so the donation record is identical regardless of how the session cleared. _(`b048fd0`)_
-- **Subpath-aware routing.** The router strips the path prefix derived from `APP_URL` before matching, so deployments at `https://host/donation` route correctly. Deployments at the web root are unaffected. _(`b048fd0`)_
-- **SMTP configuration by components.** `ReceiptMailer` accepts either a pre-formed `SMTP_DSN` or discrete `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_ENCRYPTION` components. Using components removes the need to URL-encode passwords containing special characters. _(`b048fd0`)_
-- **Nexcess deployment kit** (`deploy/`). Idempotent installer plus `.htaccess`, shims, `.env` template, and a WordPress mu-plugin that lets the donation app share a single `.env` with the WordPress SMTP configuration. The application itself is unchanged; the kit is site-specific packaging. _(`ee3c8c6`)_
-- **Audience-separated documentation.** `README.md` is now a slim entrypoint. `docs/USER.md`, `docs/ADMIN.md`, and `docs/CONTRIBUTING.md` split the documentation by reader, each describing only the features relevant to its audience. _(`fb3293a`)_
-- **`LICENSE` and `TRIBUTE.md`.** Proprietary license naming the NDASA Foundation as copyright holder, William Cross as original author, and John O'Grady / Status26 Inc as maintainer; short tribute recognising the original authorship. _(`fb3293a`)_
-- **Branching and release workflow.** `docs/CONTRIBUTING.md` now documents the `master` + feature-branches + `release/vX.Y.Z` flow the project actually uses.
+- Admin panel with config editor (atomic `.env` write, CSRF-protected, PHP-FPM-reload caveat documented).
+- Dashboard with real metrics &mdash; total donations (amount and count), total donors, page views, and conversion rate.
+- System Health checks grouped into Database, Environment, and Configuration; every probe is try/catch-wrapped and never crashes the page.
+- Page-view tracking with a 30-second per-session throttle so refreshes and cookie-holding bots cannot inflate the count.
+- Version display system with preference order `APP_VERSION` env &rarr; short git hash &rarr; hardcoded fallback constant.
+- Stripe Checkout integration with `automatic_payment_methods` so Card, Link, Apple Pay, Google Pay, and ACH surface based on the foundation's Stripe dashboard settings.
+- Webhook pipeline handling `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `charge.refunded`, and `payment_intent.payment_failed`; signatures verified with a 300-second tolerance; duplicate deliveries idempotent via the `stripe_events` table.
+- Staff notification email sent via Symfony Mailer on every successful donation; donor receipts sent directly by Stripe.
+- Nexcess managed-WordPress deployment kit (install script, `.htaccess` shims, WordPress mu-plugin that shares `.env` for SMTP credentials).
+- Audience-separated documentation set: `README.md`, `docs/USER.md`, `docs/ADMIN.md`, `docs/CONTRIBUTING.md`, plus `ROADMAP.md`, `LICENSE`, `TRIBUTE.md`.
 
 ### Changed
 
-- **PHPDoc authorship headers** added to the six entrypoints and core services (`config/app.php`, `public/index.php`, `public/webhook.php`, `src/Mail/ReceiptMailer.php`, `src/Payment/DonationService.php`, `src/Webhook/WebhookController.php`). No runtime effect. _(`b048fd0`)_
+- Donation metrics now reflect paid-only transactions (`status = 'paid'`); refunded and failed rows are excluded so the dashboard shows actual revenue rather than attempts.
+- Documentation restructured by audience (donor, operator, developer) so no document serves more than one reader at a time.
+- SMTP configuration accepts either a pre-formed `SMTP_DSN` or discrete `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_ENCRYPTION` components; components are safer because special characters in the password do not require URL-encoding.
+- Front controller is now subpath-aware: the router strips the path prefix derived from `APP_URL` so deployments at `https://host/donation` route correctly.
 
-### Removed
+### Fixed
 
-- **Dead write to `$_SESSION['pending_order']`.** The front controller previously stored a non-sensitive "pending order" hint in the session for a UX purpose that was never implemented on the success page. The write is gone; `/success` has always relied on the Stripe session lookup for its messaging, so removing the dead write changes no observable behaviour.
-
-## [1.0.0] &mdash; 2026-04-21
-
-Initial public release of the secure-rebuild donation platform. The release replaces a legacy donation application wholesale with a webhook-authoritative, PCI-SAQ-A-scoped design. All changes in this release were authored between `dc841cb` and `211e621` on the `master` branch (prior to the documentation and deployment branches).
-
-### Added
-
-- **Project scaffolding** &mdash; initial `composer.json` requiring PHP 8.2+, the Stripe SDK, `vlucas/phpdotenv`, and `symfony/mailer`; `phpunit.xml`; `.env.example` with placeholder-only values; `.gitignore` excluding `.env`, `vendor/`, logs, and the SQLite database; initial `README.md`; a writable `storage/` directory. _(`8757e2b`)_
-- **Env-driven bootstrap** (`config/app.php`) &mdash; loads `.env`, fails closed on missing required secrets, configures error logging, initialises the Stripe SDK, emits security headers (HSTS, CSP with per-request script nonce, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`), enforces HTTPS in production, and starts a hardened session. Webhook endpoints opt out of session handling via `NDASA_SKIP_SESSION`. _(`643a831`)_
-- **HTTP primitives** (`src/Http/`) &mdash; `Csrf` issues per-session tokens, rotates on validate, compares in constant time; `RateLimiter` applies a fixed-window limit via a single atomic SQLite UPSERT; `ClientIp` resolves the real client address from `X-Forwarded-For`, trusting only CIDRs or IPs listed in `TRUSTED_PROXIES` and rejecting wildcard trust. _(`d546386`)_
-- **Data layer** (`src/Support/`) &mdash; lazy-singleton PDO handle on SQLite with WAL, foreign keys, and a 5-second busy timeout; auto-migrations create the `stripe_events`, `donations`, and `rate_limit` tables on first connect; `Html::h()` helper for contextual output escaping. _(`7409a29`)_
-- **Payment domain** (`src/Payment/`) &mdash; `AmountValidator` converts a whitelisted dollar string to integer cents and enforces configurable minimum and maximum bounds; `FeeCalculator` grosses up the charge to Stripe's US standard rate when the donor opts to cover fees; `DonationService` wraps `Stripe\Checkout\Session::create` with a deterministic idempotency key derived from the order ID. _(`448320d`)_
-- **Webhook pipeline** (`src/Webhook/`) &mdash; `EventStore` provides an idempotency log keyed on Stripe event ID and a donation ledger keyed on order ID, both using `INSERT OR IGNORE`; `WebhookController` dispatches `checkout.session.completed`, `charge.refunded`, and `payment_intent.payment_failed`, returning a boolean so the entry point can trigger Stripe's retry behaviour on handler failure. _(`33535e4`)_
-- **Mail** (`src/Mail/ReceiptMailer.php`) &mdash; Symfony Mailer wrapper that sends staff notifications on every completed donation via a DSN-configured transport. Donor receipts are sent by Stripe directly via `receipt_email`. CR/LF rejection on header-bound values provides defence in depth against header injection. _(`586b94c`)_
-- **Public entry points and Apache hardening** (`public/`) &mdash; `index.php` front controller for `GET /`, `POST /checkout`, and `GET /success`, applying rate-limit and CSRF checks before any state change; `webhook.php` verifies the `Stripe-Signature` header with a 300-second tolerance and dispatches the event; `.htaccess` denies dotfiles and sensitive extensions and rewrites unknown paths to `index.php`. _(`2a913b7`)_
-- **User interface** (`templates/`, `public/assets/css/styles.css`) &mdash; donation form with preset amounts and free-form entry; live "card will be charged" preview whose gross-up matches `FeeCalculator` on the server; three-state success page (`paid` / `unpaid` / `unknown`) that speaks honestly about async payment methods; status-code-aware error page with per-situation recovery guidance; shared layout with a skip-to-content link. All output is escaped through `Html::h()`. The form submits correctly without JavaScript, falling back to a whitelisted preset when the free-form amount is empty. _(`98cbc5c`)_
-- **Tests** (`tests/`) &mdash; PHPUnit coverage for `AmountValidator` (eight cases covering simple integers, decimals, negatives, below-min, above-max, scientific notation, alphabetic input, and excess decimals) and `ClientIp` (six cases covering trusted-proxy chain walking, exact-IP match, wildcard rejection, and malformed `X-Forwarded-For`). _(`388000f`)_
-
-### Changed
-
-- **Stripe SDK upgraded from `^16.0` to `^20.0`** and the Stripe API version explicitly pinned to `2026-03-25.dahlia` in `config/app.php` so future SDK upgrades cannot silently shift webhook payload shapes. The webhook entry point's error-log message was clarified to reflect that in v20+, `UnexpectedValueException` can indicate either a malformed payload or a V2 event notification misrouted to the V1 endpoint; control flow is unchanged (both still return 400). Reviewing the pinned API version before changing it is a deliberate step. _(`211e621`)_
-
-### Removed
-
-- **Legacy donation application.** The pre-rebuild tree was imported as a single historical-reference commit (`c86e559`) and then removed wholesale prior to the rebuild (`2b0b702`). Removed components included an `index.php` that collected raw PAN and CVV, a hardcoded live Stripe key, Stripe.js v2 (no SCA/3DS2 support), the deprecated Charges API path, a `phpinfo.txt` that leaked the server environment to the public web, `mail()` usage with unsanitized headers, client-trusted amount calculation in `ajax/calculate.php`, and the absence of CSRF, webhook handling, and input validation. This was a breaking change: the `/donation/index.php` endpoint is gone.
+- Payment correctness via webhook-first processing: the browser-facing success page is advisory only; every donation record is driven by a verified webhook event.
+- Error handling and input validation hardened &mdash; CSRF tokens are rotated on successful use, amount parsing rejects scientific notation / locale separators / non-numeric input, and mail-header values reject CR/LF injection.
+- Removed a dead write to `$_SESSION['pending_order']` in the checkout handler; the value was never read and its absence has no observable effect.
 
 ### Security
 
-- PCI-DSS scope reduced to **SAQ-A** by moving all card entry to Stripe Checkout; no card data enters the application.
-- Strong Content Security Policy with a per-request script nonce replaces any reliance on `'unsafe-inline'` scripts.
-- Webhook signature verification with a 300-second tolerance window.
-- Idempotent event handling ensures duplicate Stripe deliveries cannot double-record a donation.
-- Prepared statements only; no string concatenation against SQL.
+- CSRF protection on `/admin/config` POST using the same per-session token utility the donation form uses.
+- Hardened Basic Auth header parsing: strict `Basic <base64>` regex, case-insensitive scheme match, trim of surrounding whitespace, and a try/catch around the fallback parser so malformed headers fail closed instead of raising.
+- PCI-DSS scope reduced to **SAQ-A** by moving all card entry to Stripe Checkout.
+- Strict Content Security Policy with a per-request script nonce.
+- Prepared statements only; no string-concatenation SQL anywhere in the codebase.
+- Idempotent webhook event handling prevents duplicate Stripe deliveries from double-recording a donation.
 
 ---
 
 ## Development-history notes
 
-The `master` branch preserves three commits (`dc841cb`, `659b51b`, `c86e559`) and a breaking-change commit (`2b0b702`) that together record the import and removal of the legacy codebase. They are intentionally retained so that the security rationale for the rebuild is auditable from the history itself. The present `1.0.0` release is not derived from those trees; it is a ground-up rewrite.
+The `master` branch preserves a legacy-import commit (`c86e559`) and a breaking-change removal commit (`2b0b702`) that together record the import and removal of the pre-rebuild codebase. They are intentionally retained so that the security rationale for the rebuild is auditable from the history itself. The 1.0.0 release is not derived from those trees; it is a ground-up rewrite.
 
-Items in the `[Unreleased]` section above will be rolled into the next tagged release when that release is cut on a `release/vX.Y.Z` branch (see the branching workflow in [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)).
-
-[Unreleased]: https://github.com/jwogrady/ndasa-donation/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/jwogrady/ndasa-donation/releases/tag/v1.0.0
