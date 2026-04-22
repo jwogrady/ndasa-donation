@@ -1,0 +1,19 @@
+#
+# Hidden directory that holds the real app code, config, and database.
+# Lives at: public_html/.ndasa-donation/.htaccess
+#
+# Nothing in this directory should ever be served directly. The public
+# shims at public_html/donation/index.php and public_html/donation/webhook.php
+# include files from here by server-side path; the HTTP layer has no
+# business reaching in.
+#
+
+Require all denied
+
+# Redundant but explicit: deny any dotfile, sensitive extension, and the
+# SQLite DB whatever file it might be named.
+<FilesMatch ".*">
+    Require all denied
+</FilesMatch>
+
+Options -Indexes -MultiViews

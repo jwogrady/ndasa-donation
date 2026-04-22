@@ -1,0 +1,52 @@
+#
+# Public surface of the NDASA donation app.
+# Lives at: public_html/donation/.htaccess
+#
+# Nexcess runs PHP 8.3 via PHP-FPM regardless of the stale "ea-php74" line
+# in the site-root .htaccess, so no handler override is needed here.
+#
+
+Options -Indexes -MultiViews
+
+# Deny dotfiles and any sensitive extension that might accidentally land here.
+# Belt-and-braces: the real code lives in ../.ndasa-donation which is separately
+# denied. This block protects anything that slips into the public webroot.
+<FilesMatch "^\.|\.(env|log|sqlite|sqlite-journal|ini|lock|md|sh|bak|orig|swp|inc|yml|yaml)$">
+    Require all denied
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /donation/
+
+    # Stripe webhook: real file, served directly by PHP-FPM. No rewrite.
+    RewriteRule ^webhook\.php$ - [L]
+
+    # Real files (assets, etc.) are served straight through.
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^ - [L]
+
+    # Everything else goes to the front controller.
+    RewriteRule . index.php [L]
+</IfModule>
+
+# SpeedyCache runs at the site root. Two precautions:
+# 1) Its "all/index.html" static-cache lookup happens in the site-root
+#    .htaccess; since no cache files exist for /donation/*, it falls through.
+#    But in case it ever does, we explicitly tell it not to cache this path.
+# 2) If SpeedyCache supports header-based bypass, flag the response so the
+#    CDN (if any) doesn't cache dynamic donation pages.
+<IfModule mod_headers.c>
+    Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+    Header set Pragma "no-cache"
+    Header set X-SpeedyCache-Bypass "1"
+    Header set X-Accel-Expires "0"
+</IfModule>
+
+# Defence in depth against clickjacking specifically for the donation flow.
+# The app's bootstrap also emits X-Frame-Options: DENY; this is a fallback
+# for any static file that bypasses PHP.
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "DENY"
+</IfModule>
