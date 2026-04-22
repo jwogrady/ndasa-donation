@@ -1,11 +1,44 @@
 <?php
 /**
- * @var string $csrf
- * @var bool   $canceled
+ * @var string              $csrf     CSRF token value for the hidden input.
+ * @var bool                $canceled Did the donor come back from a canceled Stripe session.
+ * @var array<string,mixed> $values   Sticky values from a validation re-render (default []).
+ * @var ?string             $error    Inline error summary shown above the form (default null).
  */
 
 use NDASA\Http\Csrf;
 use NDASA\Support\Html;
+
+$values  ??= [];
+$error   ??= null;
+$canceled ??= false;
+
+// Resolve the preset to select and the amount to prefill. On a fresh render
+// the default tier is $100 (anchors the donor toward a considered gift
+// rather than starting from an empty free-form field).
+$VALID_PRESETS = ['25', '50', '100', '250', '500'];
+$submittedPreset = (string) ($values['preset'] ?? '');
+$submittedAmount = trim((string) ($values['amount'] ?? ''));
+
+if ($submittedPreset === 'other') {
+    $selectedPreset = 'other';
+} elseif (in_array($submittedPreset, $VALID_PRESETS, true)) {
+    $selectedPreset = $submittedPreset;
+} elseif ($submittedAmount !== '' && !in_array($submittedAmount, $VALID_PRESETS, true)) {
+    $selectedPreset = 'other';
+} else {
+    $selectedPreset = '100';
+}
+
+if ($submittedAmount !== '') {
+    $amountValue = $submittedAmount;
+} elseif ($selectedPreset !== 'other') {
+    $amountValue = $selectedPreset;
+} else {
+    $amountValue = '';
+}
+
+$coverFeesSticky = ($values['cover_fees'] ?? '') === 'yes';
 
 $title = 'Donate — NDASA Foundation';
 
@@ -29,6 +62,12 @@ ob_start();
 <?php if (!empty($canceled)): ?>
   <div class="notice" role="status" aria-live="polite">
     Payment canceled. Your card was not charged — you can try again any time.
+  </div>
+<?php endif; ?>
+
+<?php if ($error !== null && $error !== ''): ?>
+  <div class="notice notice--error" role="alert">
+    <?= Html::h($error) ?>
   </div>
 <?php endif; ?>
 
@@ -95,12 +134,14 @@ ob_start();
     <div class="presets" role="radiogroup" aria-label="Preset donation amounts">
       <?php foreach ([25, 50, 100, 250, 500] as $preset): ?>
         <label class="preset">
-          <input type="radio" name="preset" value="<?= $preset ?>" data-preset>
+          <input type="radio" name="preset" value="<?= $preset ?>" data-preset
+            <?= $selectedPreset === (string) $preset ? 'checked' : '' ?>>
           <span>$<?= $preset ?></span>
         </label>
       <?php endforeach; ?>
       <label class="preset preset--other">
-        <input type="radio" name="preset" value="other" data-preset checked>
+        <input type="radio" name="preset" value="other" data-preset
+          <?= $selectedPreset === 'other' ? 'checked' : '' ?>>
         <span>Other</span>
       </label>
     </div>
@@ -122,6 +163,7 @@ ob_start();
         autocomplete="off"
         aria-describedby="amount-help"
         placeholder="Other amount"
+        value="<?= Html::h($amountValue) ?>"
       >
     </div>
     <small id="amount-help">Minimum $10.00. Maximum $10,000.00 per transaction.</small>
@@ -133,24 +175,22 @@ ob_start();
     <div class="row">
       <label for="fname">
         First name <span class="req" aria-hidden="true">*</span>
-        <input type="text" id="fname" name="fname" maxlength="100" required autocomplete="given-name">
+        <input type="text" id="fname" name="fname" maxlength="100" required autocomplete="given-name"
+          value="<?= Html::h((string) ($values['fname'] ?? '')) ?>">
       </label>
       <label for="lname">
         Last name <span class="req" aria-hidden="true">*</span>
-        <input type="text" id="lname" name="lname" maxlength="100" required autocomplete="family-name">
+        <input type="text" id="lname" name="lname" maxlength="100" required autocomplete="family-name"
+          value="<?= Html::h((string) ($values['lname'] ?? '')) ?>">
       </label>
     </div>
 
     <label for="email">
       Email <span class="req" aria-hidden="true">*</span>
-      <input type="email" id="email" name="email" maxlength="254" required autocomplete="email" aria-describedby="email-help">
+      <input type="email" id="email" name="email" maxlength="254" required autocomplete="email" aria-describedby="email-help"
+        value="<?= Html::h((string) ($values['email'] ?? '')) ?>">
     </label>
     <small id="email-help">Your receipt will be sent here.</small>
-
-    <label for="phone">
-      Phone <span class="muted">(optional)</span>
-      <input type="tel" id="phone" name="phone" maxlength="30" autocomplete="tel">
-    </label>
   </fieldset>
 
   <fieldset class="fees">
@@ -161,17 +201,17 @@ ob_start();
     </p>
     <div class="fees__options">
       <label class="inline">
-        <input type="radio" name="cover_fees" value="yes">
+        <input type="radio" name="cover_fees" value="yes" <?= $coverFeesSticky ? 'checked' : '' ?>>
         Yes, I'll cover the fee
       </label>
       <label class="inline">
-        <input type="radio" name="cover_fees" value="no" checked>
+        <input type="radio" name="cover_fees" value="no" <?= $coverFeesSticky ? '' : 'checked' ?>>
         No thanks
       </label>
     </div>
   </fieldset>
 
-  <p id="total-preview" class="total-preview" hidden aria-live="polite"></p>
+  <p id="total-preview" class="total-preview" aria-live="polite"></p>
 
   <button type="submit" class="btn btn--primary">
     Continue to secure checkout &rarr;
@@ -249,12 +289,14 @@ ob_start();
   const grossUp = (cents) => Math.ceil((cents + 30) / (1 - 0.029));
 
   const updateTotal = () => {
-    const base = parseAmount();
     if (!total) return;
-    if (base === 0) { total.hidden = true; return; }
+    const base = parseAmount();
+    if (base === 0) {
+      total.textContent = 'Enter an amount above to see what your card will be charged.';
+      return;
+    }
     const cover = document.querySelector('input[name="cover_fees"]:checked')?.value === 'yes';
     const charged = cover ? grossUp(base) : base;
-    total.hidden = false;
     total.textContent = cover
       ? `Your card will be charged ${fmt(charged)} so we receive ${fmt(base)} after fees.`
       : `Your card will be charged ${fmt(charged)}.`;

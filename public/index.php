@@ -78,6 +78,23 @@ function render_form(): void
         $_SESSION['last_view_ts'] = $now;
     }
 
+    // Fresh form render: mint a new CSRF token so one session cannot reuse
+    // an old token across unrelated attempts. Csrf::validate() no longer
+    // rotates, so honest retries keep working — but every GET / does.
+    Csrf::rotate();
+
+    render_form_view();
+}
+
+/**
+ * Render the donation form, optionally with sticky values and an error
+ * summary. Used for both fresh GETs and validation-failure re-renders.
+ *
+ * @param array<string,mixed> $values Raw post data to re-hydrate into the form.
+ * @param ?string             $error  Inline summary shown above the form.
+ */
+function render_form_view(array $values = [], ?string $error = null): void
+{
     $csrf     = Csrf::token();
     $canceled = isset($_GET['canceled']);
     require __DIR__ . '/../templates/form.php';
@@ -96,16 +113,25 @@ function handle_checkout(): void
 
     $token = $_POST[Csrf::FIELD] ?? null;
     if (!is_string($token) || !Csrf::validate($token)) {
+        // Token missing or stale. Re-render the form — preserving what the
+        // donor typed — with a fresh token so a single retry succeeds.
         http_response_code(400);
-        render_error('Your session has expired. Please reload the page and try again.');
+        Csrf::rotate();
+        render_form_view(
+            $_POST,
+            'Something interrupted the last attempt. Your details are still here — just hit Donate again.',
+        );
         return;
     }
 
     try {
         $input = validate_donor_input($_POST);
     } catch (\InvalidArgumentException $e) {
+        // Sticky re-render so the donor can fix one field instead of
+        // starting from a blank form.
         http_response_code(422);
-        render_error($e->getMessage());
+        Csrf::rotate();
+        render_form_view($_POST, $e->getMessage());
         return;
     }
 
@@ -113,7 +139,8 @@ function handle_checkout(): void
         $cents = compute_charge_cents($input['amount'], $input['cover_fees']);
     } catch (\InvalidArgumentException) {
         http_response_code(422);
-        render_error('Please enter a valid donation amount.');
+        Csrf::rotate();
+        render_form_view($_POST, 'Please enter a valid donation amount.');
         return;
     }
 
@@ -305,14 +332,13 @@ function handle_admin_config(): void
 
 /**
  * @param array<string, mixed> $post
- * @return array{fname:string,lname:string,email:string,phone:string,amount:string,cover_fees:bool}
+ * @return array{fname:string,lname:string,email:string,amount:string,cover_fees:bool}
  */
 function validate_donor_input(array $post): array
 {
     $fname = clean_name((string) ($post['fname'] ?? ''));
     $lname = clean_name((string) ($post['lname'] ?? ''));
     $email = filter_var(trim((string) ($post['email'] ?? '')), FILTER_VALIDATE_EMAIL);
-    $phone = (string) preg_replace('/[^\d+\-\s()]/', '', (string) ($post['phone'] ?? ''));
     $cover = (($post['cover_fees'] ?? 'no') === 'yes');
 
     // Prefer the free-form amount; fall back to a whitelisted preset so the form
@@ -332,7 +358,7 @@ function validate_donor_input(array $post): array
 
     // Defence in depth against header injection even though we don't use
     // mail() directly — these values flow into Stripe metadata and logs.
-    foreach ([$fname, $lname, $email, $phone] as $v) {
+    foreach ([$fname, $lname, $email] as $v) {
         if (preg_match('/[\r\n]/', $v)) {
             throw new \InvalidArgumentException('Invalid input.');
         }
@@ -342,7 +368,6 @@ function validate_donor_input(array $post): array
         'fname'      => $fname,
         'lname'      => $lname,
         'email'      => $email,
-        'phone'      => $phone,
         'amount'     => $amount,
         'cover_fees' => $cover,
     ];
