@@ -60,5 +60,10 @@ final class Database
             count INTEGER NOT NULL,
             window_start INTEGER NOT NULL
         )');
+        // Unix-timestamp column for consistency with stripe_events and donations.
+        $pdo->exec('CREATE TABLE IF NOT EXISTS page_views (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at INTEGER NOT NULL
+        )');
     }
 }

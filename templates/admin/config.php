@@ -2,13 +2,16 @@
 /**
  * Admin config editor.
  *
- * @var array<string,string> $values    Current values to prefill.
- * @var ?string              $flashOk   Success message, if any.
- * @var ?string              $flashErr  Error message, if any.
- * @var array<string>        $fields    Ordered list of editable field keys.
- * @var array<string,string> $descriptions  key -> human-readable help text.
+ * @var array<string,string> $values          Current values to prefill.
+ * @var ?string              $flashOk         Success message, if any.
+ * @var ?string              $flashErr        Error message, if any.
+ * @var array<string>        $fields          Ordered list of editable field keys.
+ * @var array<string,string> $descriptions    key -> human-readable help text.
+ * @var string               $csrf            CSRF token value for the hidden input.
+ * @var array<string>        $missingRequired Required env vars currently empty.
  */
 
+use NDASA\Http\Csrf;
 use NDASA\Support\Html;
 
 $title  = 'Config';
@@ -17,6 +20,13 @@ $active = 'config';
 ob_start();
 ?>
 <h1>Config</h1>
+
+<?php if (!empty($missingRequired)): ?>
+  <div class="notice notice--err" role="alert">
+    Configuration incomplete &mdash; the following required values are not set:
+    <strong><?= Html::h(implode(', ', $missingRequired)) ?></strong>.
+  </div>
+<?php endif; ?>
 
 <?php if (!empty($flashOk)): ?>
   <div class="notice notice--ok" role="status"><?= Html::h($flashOk) ?></div>
@@ -33,6 +43,8 @@ ob_start();
   </p>
 
   <form method="post" action="/admin/config" autocomplete="off">
+    <input type="hidden" name="<?= Html::h(Csrf::FIELD) ?>" value="<?= Html::h($csrf) ?>">
+
     <?php foreach ($fields as $key): ?>
       <?php
         $isSecret = str_contains($key, 'SECRET') || str_contains($key, 'PASS');
