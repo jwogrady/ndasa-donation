@@ -17,6 +17,7 @@ require_once __DIR__ . '/../config/app.php';
 
 use NDASA\Admin\Auth as AdminAuth;
 use NDASA\Admin\EnvFile;
+use NDASA\Admin\HealthCheck as AdminHealthCheck;
 use NDASA\Admin\Metrics as AdminMetrics;
 use NDASA\Http\ClientIp;
 use NDASA\Http\Csrf;
@@ -66,9 +67,15 @@ try {
 
 function render_form(): void
 {
-    // Best-effort page-view tracking for the admin dashboard. A failure here
-    // must not prevent the donation form from rendering.
-    AdminMetrics::recordPageView(Database::connection());
+    // Best-effort page-view tracking for the admin dashboard. Throttled per
+    // session so a refresh-happy donor (or a bot that keeps a cookie jar)
+    // only counts once per 30 seconds. A DB failure must not block the form.
+    $now  = time();
+    $last = (int) ($_SESSION['last_view_ts'] ?? 0);
+    if ($now - $last > 30) {
+        AdminMetrics::recordPageView(Database::connection());
+        $_SESSION['last_view_ts'] = $now;
+    }
 
     $csrf     = Csrf::token();
     $canceled = isset($_GET['canceled']);
@@ -199,15 +206,30 @@ function admin_missing_required(): array
 
 function render_admin_dashboard(): void
 {
-    $metrics = new AdminMetrics(Database::connection());
+    // Some dashboards can still render even if the DB is unreachable — we
+    // want the health panel to say so rather than throwing a 500.
+    $metrics = null;
+    $pageViews = $donationCount = $donorCount = $totalCents = 0;
+    $conversionPct = 0.0;
+    $recent = [];
+    $missingIndexes = ['idx_donations_created_at', 'idx_page_views_created_at'];
 
-    $pageViews       = $metrics->pageViewCount();
-    $donationCount   = $metrics->donationCount();
-    $donorCount      = $metrics->donorCount();
-    $totalCents      = $metrics->totalDonationCents();
-    $conversionPct   = $metrics->conversionRatePercent();
-    $recent          = $metrics->recentDonations(10);
+    try {
+        $db = Database::connection();
+        $metrics = new AdminMetrics($db);
+        $pageViews     = $metrics->pageViewCount();
+        $donationCount = $metrics->donationCount();
+        $donorCount    = $metrics->donorCount();
+        $totalCents    = $metrics->totalDonationCents();
+        $conversionPct = $metrics->conversionRatePercent();
+        $recent        = $metrics->recentDonations(10);
+        $missingIndexes = AdminHealthCheck::missingIndexes($db);
+    } catch (\Throwable $e) {
+        error_log('Admin dashboard metrics unavailable: ' . $e->getMessage());
+    }
+
     $missingRequired = admin_missing_required();
+    $health          = AdminHealthCheck::all();
 
     require __DIR__ . '/../templates/admin/dashboard.php';
 }

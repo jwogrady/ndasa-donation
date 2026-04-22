@@ -18,6 +18,8 @@
  *          refunded_at:?int
  *      }> $recent
  * @var list<string>     $missingRequired  Required env vars currently empty.
+ * @var list<string>     $missingIndexes   Expected indexes not yet created.
+ * @var list<array{label:string,ok:bool,detail:?string}> $health  Health-check rows.
  */
 
 use NDASA\Support\Html;
@@ -43,6 +45,14 @@ ob_start();
     Configuration incomplete &mdash; check required values:
     <strong><?= Html::h(implode(', ', $missingRequired)) ?></strong>.
     Visit <a href="/admin/config">Config</a> to fix.
+  </div>
+<?php endif; ?>
+
+<?php if (!empty($missingIndexes)): ?>
+  <div class="notice notice--err" role="alert">
+    Database optimization recommended (missing indexes).
+    Visit any page to trigger the auto-migration, or restart PHP-FPM so the
+    migration block runs against the live database.
   </div>
 <?php endif; ?>
 
@@ -99,10 +109,39 @@ ob_start();
   </table>
 </div>
 
+<h2>System Health</h2>
+<div class="panel">
+  <table>
+    <thead>
+      <tr>
+        <th>Check</th>
+        <th>Status</th>
+        <th>Detail</th>
+      </tr>
+    </thead>
+    <tbody>
+      <?php foreach ($health as $h): ?>
+        <tr>
+          <td><?= Html::h($h['label']) ?></td>
+          <td>
+            <?php if ($h['ok']): ?>
+              <span style="color:#1b5e20;font-weight:600;">OK</span>
+            <?php else: ?>
+              <span style="color:#7f1d1d;font-weight:600;">FAIL</span>
+            <?php endif; ?>
+          </td>
+          <td class="muted"><?= $h['detail'] === null ? '' : Html::h($h['detail']) ?></td>
+        </tr>
+      <?php endforeach; ?>
+    </tbody>
+  </table>
+</div>
+
 <p class="muted" style="margin-top: 24px;">
-  Page views are counted per GET request to <code>/</code>. Donations are sourced
-  from webhook-verified records. Conversion rate = donations &divide; page views.
-  The Stripe dashboard remains the authoritative record for financial reconciliation.
+  Page views are counted per GET request to <code>/</code>, throttled to one
+  entry per 30 seconds per session. Donations are sourced from webhook-verified
+  records. Conversion rate = donations &divide; page views. The Stripe dashboard
+  remains the authoritative record for financial reconciliation.
 </p>
 <?php
 $body = ob_get_clean();
