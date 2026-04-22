@@ -45,25 +45,32 @@ final class Metrics
             (int) $this->db->query('SELECT COUNT(*) FROM page_views')->fetchColumn();
     }
 
+    /**
+     * Count of donations that represent real money received.
+     * Excludes pending, failed, and refunded rows — the dashboard is a
+     * revenue view, not an attempt-funnel view.
+     */
     public function donationCount(): int
     {
         return $this->donationCount ??=
-            (int) $this->db->query('SELECT COUNT(*) FROM donations')->fetchColumn();
+            (int) $this->db->query("SELECT COUNT(*) FROM donations WHERE status = 'paid'")->fetchColumn();
     }
 
-    /** Distinct donor count (by email, case-insensitive). */
+    /** Distinct donor count among successful donations (by email, case-insensitive). */
     public function donorCount(): int
     {
         return $this->donorCount ??= (int) $this->db
-            ->query('SELECT COUNT(DISTINCT lower(email)) FROM donations')
+            ->query("SELECT COUNT(DISTINCT lower(email)) FROM donations WHERE status = 'paid'")
             ->fetchColumn();
     }
 
-    /** Sum of donation amounts in cents. Includes refunded rows by design; the spec is gross. */
+    /** Sum of donation amounts in cents, restricted to paid (non-refunded) rows. */
     public function totalDonationCents(): int
     {
         return $this->totalDonationCents ??=
-            (int) $this->db->query('SELECT COALESCE(SUM(amount_cents), 0) FROM donations')->fetchColumn();
+            (int) $this->db
+                ->query("SELECT COALESCE(SUM(amount_cents), 0) FROM donations WHERE status = 'paid'")
+                ->fetchColumn();
     }
 
     /**

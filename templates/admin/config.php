@@ -9,6 +9,7 @@
  * @var array<string,string> $descriptions    key -> human-readable help text.
  * @var string               $csrf            CSRF token value for the hidden input.
  * @var array<string>        $missingRequired Required env vars currently empty.
+ * @var string               $appVersion      Resolved app version string.
  */
 
 use NDASA\Http\Csrf;
@@ -23,8 +24,8 @@ ob_start();
 
 <?php if (!empty($missingRequired)): ?>
   <div class="notice notice--err" role="alert">
-    Configuration incomplete &mdash; the following required values are not set:
-    <strong><?= Html::h(implode(', ', $missingRequired)) ?></strong>.
+    <strong>Configuration incomplete &mdash; donations may fail.</strong>
+    Required values not set: <?= Html::h(implode(', ', $missingRequired)) ?>.
   </div>
 <?php endif; ?>
 

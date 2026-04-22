@@ -27,13 +27,31 @@ use NDASA\Support\Database;
 final class HealthCheck
 {
     /**
-     * @return list<array{label:string,ok:bool,detail:?string}>
+     * Grouped health checks for the admin dashboard. Three sections:
+     *
+     *   Database      — connection, schema, indexes
+     *   Environment   — writability of the files the app touches at runtime
+     *   Configuration — presence of the required env vars
+     *
+     * Every probe is wrapped so it cannot throw; failures surface as FAIL
+     * rows with a human-readable detail string.
+     *
+     * @return array<string, list<array{label:string,ok:bool,detail:?string}>>
      */
     public static function all(): array
     {
+        return [
+            'Database'      => self::databaseChecks(),
+            'Environment'   => self::environmentChecks(),
+            'Configuration' => self::configurationChecks(),
+        ];
+    }
+
+    /** @return list<array{label:string,ok:bool,detail:?string}> */
+    private static function databaseChecks(): array
+    {
         $out = [];
 
-        // DB connection.
         $db = null;
         try {
             $db = Database::connection();
@@ -42,7 +60,6 @@ final class HealthCheck
             $out[] = self::row('Database connection', false, 'Unable to open: ' . $e->getMessage());
         }
 
-        // Schema presence.
         foreach (['donations', 'page_views', 'stripe_events'] as $table) {
             $out[] = self::row(
                 "Table: {$table}",
@@ -51,16 +68,46 @@ final class HealthCheck
             );
         }
 
-        // Indexes — if missing, show a dedicated optimisation warning on
-        // the dashboard. Absence is not fatal; queries just get slower.
-        $missingIndexes = $db !== null ? self::missingIndexes($db) : ['idx_donations_created_at', 'idx_page_views_created_at'];
+        $missingIndexes = $db !== null
+            ? self::missingIndexes($db)
+            : ['idx_donations_created_at', 'idx_page_views_created_at'];
         $out[] = self::row(
             'Database indexes',
             $missingIndexes === [],
             $missingIndexes === [] ? null : 'Missing: ' . implode(', ', $missingIndexes),
         );
 
-        // Required env vars.
+        return $out;
+    }
+
+    /** @return list<array{label:string,ok:bool,detail:?string}> */
+    private static function environmentChecks(): array
+    {
+        $out = [];
+
+        // Repo root is one level above this file's src/Admin/ directory.
+        $root = dirname(__DIR__, 2);
+
+        $envPath = $root . '/.env';
+        $out[] = self::writableFileCheck('.env writable', $envPath);
+
+        $dbPath = (string) ($_ENV['DB_PATH'] ?? '');
+        if ($dbPath === '') {
+            $out[] = self::row('Database file writable', false, 'DB_PATH is not set');
+        } else {
+            $out[] = self::writableFileCheck('Database file writable', $dbPath);
+        }
+
+        $logsDir = $root . '/storage/logs';
+        $out[] = self::writableDirCheck('Logs directory writable', $logsDir);
+
+        return $out;
+    }
+
+    /** @return list<array{label:string,ok:bool,detail:?string}> */
+    private static function configurationChecks(): array
+    {
+        $out = [];
         foreach (['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'APP_URL'] as $key) {
             $out[] = self::row(
                 "Env: {$key}",
@@ -68,8 +115,39 @@ final class HealthCheck
                 null,
             );
         }
-
         return $out;
+    }
+
+    private static function writableFileCheck(string $label, string $path): array
+    {
+        try {
+            if (!file_exists($path)) {
+                // A non-existent file is writable iff its directory is.
+                $dir = dirname($path);
+                $ok  = is_dir($dir) && is_writable($dir);
+                $detail = $ok
+                    ? "{$path} does not exist yet (will be created on first write)"
+                    : "Parent directory not writable: {$dir}";
+                return self::row($label, $ok, $detail);
+            }
+            $ok = is_writable($path);
+            return self::row($label, $ok, $ok ? $path : "{$path} (check file permissions)");
+        } catch (\Throwable $e) {
+            return self::row($label, false, $e->getMessage());
+        }
+    }
+
+    private static function writableDirCheck(string $label, string $path): array
+    {
+        try {
+            if (!is_dir($path)) {
+                return self::row($label, false, "{$path} does not exist");
+            }
+            $ok = is_writable($path);
+            return self::row($label, $ok, $ok ? $path : "{$path} (check directory permissions)");
+        } catch (\Throwable $e) {
+            return self::row($label, false, $e->getMessage());
+        }
     }
 
     /** @return list<string> */

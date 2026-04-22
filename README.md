@@ -51,15 +51,27 @@ This will give you the donation form. To actually create a Checkout session you 
 
 - **Page views** are counted per GET request to `/` (the donation page).
 - **Donations** are sourced from webhook-verified records in the local SQLite ledger; the Stripe API is not queried.
-- **Conversion rate** = donations &divide; page views, expressed as a percentage rounded to one decimal place. Zero page views yields 0%.
-- **Recent donations** shows the ten most recent rows, newest first.
+- **Donation counts and totals reflect successful payments only** (`status = 'paid'`). Refunded, pending, and failed rows are excluded so the dashboard shows actual revenue rather than attempts.
+- **Conversion rate** = successful-donation count &divide; page views, expressed as a percentage rounded to one decimal place. Zero page views yields 0%.
+- **Recent donations** shows the ten most recent rows, newest first. Refunded rows are included so the status column tells the full story.
 
 ### Performance & Metrics Notes
 
 - **Page views are throttled** to one record per 30 seconds per session, so a refresh-happy donor or bot with a cookie jar cannot inflate the count.
 - **Metrics use database aggregates** (`COUNT`, `SUM`, `COUNT(DISTINCT …)`); results are memoised per request so the dashboard runs each query at most once per page load.
 - **Indexes on `donations(created_at)` and `page_views(created_at)`** are created automatically on first connect and are required for dashboard queries to remain fast as volume grows.
-- **System Health warnings** appear on `/admin` when any required env var is missing, any expected table or index is absent, or the database is unreachable.
+- **System Health warnings** appear on `/admin` when any required env var is missing, any expected table or index is absent, the database is unreachable, or a runtime file or directory is not writable.
+
+## Deployment Requirements
+
+For the application (and its admin panel) to run correctly, the following must be true on the target host:
+
+- **`.env` must be writable by the PHP-FPM user** if the admin config editor is expected to save changes. Read-only `.env` files are still usable; the admin panel will surface the permission problem rather than silently fail.
+- **The SQLite database file at `DB_PATH` must be writable.** The donation ledger, webhook idempotency log, and rate-limit counter all depend on it. Parent directory must also be writable for first-run creation.
+- **The `storage/logs/` directory must be writable.** PHP errors are logged there; the directory itself is expected to exist in the deployment.
+- **The three required env vars** `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `APP_URL` must be set. If any is empty, payment processing will fail and the admin dashboard shows a **"Configuration incomplete — donations may fail"** warning.
+
+The admin dashboard's System Health panel surfaces each of these conditions as an OK or FAIL row, grouped by Database, Environment, and Configuration.
 
 ## Authors
 
