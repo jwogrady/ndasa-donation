@@ -6,14 +6,19 @@ All notable changes to the NDASA Donation Platform are documented in this file. 
 
 ### Added
 
+- **Admin console — Transactions / Subscriptions / Donors.** Three new paginated index pages in the admin nav, each with a detail drill-down. `/admin/transactions` supports email substring search, status filter, date range, and a 25/50/100/500 page-size dropdown. `/admin/subscriptions` lists one row per `stripe_subscription_id` with derived status; `/admin/subscriptions/{sub_id}` additionally calls `Stripe\Subscription::retrieve()` for authoritative live status (current period, cancel flags). `/admin/donors` lists one row per lowercased email with lifetime totals; `/admin/donors/{sha256(email)}` shows donor identity, opt-in state, every donation, any subscriptions, and lazily-fetched Stripe hosted-receipt URLs per donation. Donor URLs use a SHA-256 hash so email identifiers never land in access logs or browser history.
+- **Dashboard pulse.** Four operational tiles above the recent-donations table: **Last Webhook** heartbeat with age-bucketed traffic-light borders (`<1h` / `<1d` / `>1d` / never); **Active Recurring** commitment ($/month, yearly normalized /12); **Last 30 Days** inline-SVG sparkline with zero-day backfill; **Refund Rate (30d)** with ok/warn/bad color bands. Repeat-donors panel rendered below when any donor has more than one paid gift.
+- **Live/test dashboard filter.** Every donation row now carries a `livemode` flag sourced from the verified Stripe event (1 live, 0 test). Metrics, the recent table, the CSV export, the donation detail page, and all three new index pages filter by the admin's currently active mode, so flipping the toggle swaps the view without mingling test runs with real revenue. CSV filename includes `-live-` or `-test-` to prevent accounting mishaps after download.
+- **Stripe API importer** at `bin/stripe-import.php`. Back-fills `donations` from Stripe (Checkout Sessions, Invoices, Charges) using `EventStore::recordDonation` — same path as the webhook so schemas can't drift. Required `--mode=live|test`; optional `--from`/`--to` (YYYY-MM-DD); `--dry-run`; `--yes` to skip the confirmation; `--verbose`. Idempotent via `INSERT OR IGNORE`. Foreign sessions (no `client_reference_id`) and non-subscription invoices are counted separately from inserts and skips so the report distinguishes "we've already got this" from "not ours."
+- **Backup pruner** at `deploy/prune-backups.sh`. Dry-run by default; `--execute` required to delete. Retains per series (hidden-app + public-shim tracked independently) so `--keep 3` keeps 3 of each, not 3 interleaved. Supports `--older-than DAYS`. A belt-and-braces regex + parent-dir guard runs immediately before every `rm -rf` so a bug in the matching logic can't wipe neighbouring directories. Supports a one-time legacy sweep via `BACKUP_ROOT=$HOME/public_html` for snapshots created by older installers.
 - **Recurring donations.** Frequency toggle on the donor form (One-time / Monthly / Yearly, default One-time). Monthly and yearly selections create a Stripe Subscription instead of a one-time Payment session. Fee-cover gross-up, when elected, is baked into the subscription price at signup and stays fixed for the subscription lifetime. CTA and total preview update live based on the chosen frequency.
 - **Stripe Customer Portal integration.** Success page mints a Portal session for recurring donors with a "Manage or cancel this donation" link. Degrades gracefully to a contact-us message if the Portal isn't enabled in the Stripe dashboard.
 - **Webhook handlers for subscriptions**: `invoice.paid`, `invoice.payment_failed`, `customer.subscription.deleted`. First-invoice dedupe against `checkout.session.completed` via `order_id` lookup; subsequent recurring charges use `inv_<invoice_id>` as a synthetic, deterministic order_id so retries stay idempotent.
 - **Dedication field** on the donor form ("in memory / in honor of"), 200-char cap, stored in Stripe metadata and a new `donations.dedication` column. Surfaced in the staff-notification email and admin detail view; not printed on the donor receipt.
 - **Newsletter opt-in checkbox** below the email field, pre-checked by default. Propagates through validator → Stripe metadata → webhook → a new `donations.email_optin` column. Visible on the admin detail view and CSV export. Consent capture only — no send path yet.
 - **Clickable impact cards** on the donor form. Each `<button>` card selects the matching preset, scrolls the form into view, and updates the total preview. Default ($100) tier is visually highlighted.
-- **Mobile layout reorder**: below 560px, the donation form renders immediately after the hero with impact/allocation sections below. Desktop unchanged. DOM order preserved for screen readers.
-- **Success-page "amplify" block**: share buttons (X, Facebook, LinkedIn, email) with prefilled copy, plus a Double-the-Donation employer-matching lookup link.
+- **Mobile layout reorder**: below 560px, the impact cards render right after the hero pills and before the amount picker; desktop order is the same by DOM order. Screen-reader flow is preserved.
+- **Success-page "amplify" block**: share buttons (X, Facebook, LinkedIn, email) with prefilled copy. Employer-matching section now shows a generic "check with your HR department" note — no external lookup link.
 - **CSV export of donations** at `/admin/export` with optional `from` / `to` date filters (YYYY-MM-DD, interpreted in `APP_TIMEZONE`). Streams `text/csv` with ISO-8601 timestamps; includes interval, subscription id, dedication, and newsletter opt-in columns.
 - **Donation detail page** at `/admin/donations/{order_id}` with mode-aware deep links into the Stripe dashboard for the PaymentIntent and Subscription.
 - **Admin audit log**. Append-only `admin_audit` table records config saves and Stripe mode toggles with actor, action, detail, and timestamp. Config saves log only the *changed* key names — never values, so secrets stay out of the log. Renders as an "Admin Activity" panel on the dashboard.
@@ -23,11 +28,13 @@ All notable changes to the NDASA Donation Platform are documented in this file. 
 - **Site footer** with tagline, copyright year, 501(c)(3) acknowledgement, Stripe attribution.
 - **Diagnostic script** at `deploy/diagnose.sh` for read-only on-host triage.
 - **Env-sync check** at `bin/check-env-sync.php` that verifies `.env.example` and `deploy/.env.template` declare the same key set. Wired into CI.
-- **Stripe importer** at `bin/stripe-import.php`: back-fills the local `donations` table from the Stripe API for a given mode (`--mode=live|test`) and optional date window (`--from` / `--to`). Uses `EventStore::recordDonation` so the logic matches the webhook path exactly. Idempotent (INSERT OR IGNORE on order_id); supports `--dry-run` for pre-flight. Lets operators recover from missed webhooks, DB resets, or fresh installs that need history.
 - **CI workflow** at `.github/workflows/ci.yml`: `php -l` on the tree, env-sync check, PHPUnit.
 
 ### Changed
 
+- **Deploy backups live outside the webroot.** `install.sh` now writes snapshots to `~/backups/ndasa-donation/` (overridable via `BACKUP_ROOT`) with `chmod 700`, instead of next to WordPress. Keeps copies of `.env`, the SQLite DB, and app source out of any path that could be served or scanned by WordPress plugins. `mv` across same-filesystem paths remains atomic.
+- **`install.sh` preserves runtime data across reinstalls.** Both `.env` and `storage/` (SQLite DB, WAL/SHM journals, logs) are rescued before the old install is renamed and restored into the fresh install. A staged `storage.safety-copy/` inside the backup dir survives mid-install failures; it is removed only after the restore confirms a non-empty `donations.sqlite` in the new install. On abort, the cleanup trap tells the operator the safety-copy path so recovery is a directory copy.
+- **`ReceiptMailer` falls back to local `sendmail://default`** when neither `SMTP_DSN` nor `SMTP_HOST` is configured. Resolves an earlier failure mode where the webhook handler 500'd during `new ReceiptMailer()` on hosts without SMTP creds, stranding legitimate events.
 - **Webhook signature verification** accepts both the live and test signing secrets, first-secret-wins. Flipping the admin mode toggle no longer strands in-flight retries signed with the previous mode's secret.
 - **Webhook idempotency is two-phase.** The handler runs first; the `stripe_events` row is inserted only after success. A transient handler failure now lets Stripe retry successfully instead of silently deduping a failed event. Downstream writes remain idempotent via `INSERT OR IGNORE` on `donations.order_id`.
 - **`Csrf::rotate()` regenerates the PHP session ID** (`session_regenerate_id(true)`) in addition to minting a fresh token, closing a session-fixation window.
@@ -43,7 +50,7 @@ All notable changes to the NDASA Donation Platform are documented in this file. 
 ### Fixed
 
 - Rate limiter uses select-then-insert-or-update inside a transaction instead of `UPSERT` / `RETURNING`. Nexcess managed WP ships SQLite 3.7.17, which predates both.
-- Deploy installer: dropped a bogus publishable-key check; fixed `awk`/`tr` quoting; preserves active `.env` across reinstalls.
+- Deploy installer: dropped a bogus publishable-key check; fixed `awk`/`tr` quoting.
 
 ### Schema
 
@@ -52,11 +59,12 @@ All notable changes to the NDASA Donation Platform are documented in this file. 
 - `donations.interval` (TEXT, nullable: `'month'` / `'year'` / NULL one-time)
 - `donations.stripe_subscription_id` (TEXT, nullable)
 - `donations.stripe_customer_id` (TEXT, nullable)
+- `donations.livemode` (INTEGER, NOT NULL, DEFAULT 1)
 - `admin_audit` table (id, actor, action, detail, created_at) + `idx_admin_audit_created_at`
 - `app_config` table (key, value, updated_at)
-- `idx_donations_status`, `idx_donations_subscription`
+- `idx_donations_status`, `idx_donations_subscription`, `idx_donations_livemode_created_at`, `idx_donations_livemode_status`
 
-All migrations are idempotent and SQLite 3.7.17-safe (probe `pragma_table_info` before `ALTER TABLE ADD COLUMN`).
+All migrations are idempotent and SQLite 3.7.17-safe (probe `pragma_table_info` before `ALTER TABLE ADD COLUMN`; no `RENAME COLUMN` or `DROP COLUMN`).
 
 ---
 
