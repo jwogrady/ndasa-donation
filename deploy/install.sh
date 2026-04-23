@@ -106,6 +106,11 @@ if [[ -e "$HIDDEN_DIR" || -e "$PUBLIC_DIR" ]]; then
         green "The active .env will be preserved and restored into the new install."
         echo "    (It is NEVER overwritten by this script.)"
     fi
+    if [[ -d "$HIDDEN_DIR/storage" ]]; then
+        echo
+        green "The storage/ directory (SQLite DB, logs) will be preserved."
+        echo "    Donations, page views, admin audit, and app config survive the upgrade."
+    fi
     echo
     confirm "Proceed with backup and reinstall?" \
         || { yellow "Aborted."; exit 0; }
@@ -120,6 +125,27 @@ if [[ -e "$HIDDEN_DIR" || -e "$PUBLIC_DIR" ]]; then
         green "Active .env rescued to $RESCUED_ENV"
     fi
 
+    # Rescue the live storage/ directory the same way. Move (not copy) so we
+    # don't duplicate multi-MB DB files. A secondary copy still exists in the
+    # post-move backup dir below, because the parent HIDDEN_DIR only gets mv'd
+    # AFTER this block — so when the parent is renamed to .bak-TAG, storage/
+    # is already out of the way and the .bak directory ends up without it.
+    # That's fine: the rescued copy is the authoritative preservation path.
+    RESCUED_STORAGE=""
+    if [[ -d "$HIDDEN_DIR/storage" ]]; then
+        RESCUED_STORAGE="$(mktemp -d -t ndasa-storage.XXXXXX)"
+        # mv contents, not the directory itself, so mktemp's dir (mode 700) is reused.
+        if compgen -G "$HIDDEN_DIR/storage/"* > /dev/null \
+        || compgen -G "$HIDDEN_DIR/storage/".* > /dev/null; then
+            # shellcheck disable=SC2086
+            mv "$HIDDEN_DIR/storage/"* "$RESCUED_STORAGE/" 2>/dev/null || true
+            # Hidden files (rare but possible, e.g. sqlite-wal/shm journals).
+            find "$HIDDEN_DIR/storage/" -maxdepth 1 -mindepth 1 -name '.*' \
+                -exec mv {} "$RESCUED_STORAGE/" \; 2>/dev/null || true
+        fi
+        green "Active storage/ rescued to $RESCUED_STORAGE"
+    fi
+
     [[ -e "$HIDDEN_DIR" ]] && mv "$HIDDEN_DIR" "${HIDDEN_DIR}.bak-${BACKUP_TAG}"
     [[ -e "$PUBLIC_DIR" ]] && mv "$PUBLIC_DIR" "${PUBLIC_DIR}.bak-${BACKUP_TAG}"
     green "Existing install backed up."
@@ -129,11 +155,14 @@ else
 fi
 echo
 
-# Guarantee the rescued .env is cleaned up no matter how we exit.
-cleanup_rescued_env() {
+# Guarantee rescued artefacts are cleaned up no matter how we exit. The
+# restore step below empties RESCUED_STORAGE by move, so these are no-ops
+# on success and only matter on early-exit failure paths.
+cleanup_rescued() {
     [[ -n "$RESCUED_ENV" && -f "$RESCUED_ENV" ]] && rm -f "$RESCUED_ENV"
+    [[ -n "${RESCUED_STORAGE:-}" && -d "$RESCUED_STORAGE" ]] && rm -rf "$RESCUED_STORAGE"
 }
-trap cleanup_rescued_env EXIT
+trap cleanup_rescued EXIT
 
 # ——— Step 1: Hidden app directory ———
 bold "[1/6] Creating hidden app directory"
@@ -160,6 +189,24 @@ cp "$REPO_DIR/deploy/apache/ndasa-donation.htaccess" "$HIDDEN_DIR/.htaccess"
 
 # Storage directory: writable by the PHP-FPM user (same as file owner here).
 mkdir -p "$HIDDEN_DIR/storage/logs"
+
+# Restore the rescued storage contents if we had a prior install. Donations,
+# page_views, stripe_events, app_config, admin_audit, and any logs all flow
+# back into the fresh install here. Files are moved (not copied) so a failure
+# leaves the rescued dir partially populated and diagnosable.
+if [[ -n "${RESCUED_STORAGE:-}" && -d "$RESCUED_STORAGE" ]]; then
+    if compgen -G "$RESCUED_STORAGE/"* > /dev/null \
+    || compgen -G "$RESCUED_STORAGE/".* > /dev/null; then
+        # shellcheck disable=SC2086
+        mv "$RESCUED_STORAGE/"* "$HIDDEN_DIR/storage/" 2>/dev/null || true
+        find "$RESCUED_STORAGE/" -maxdepth 1 -mindepth 1 -name '.*' \
+            -exec mv {} "$HIDDEN_DIR/storage/" \; 2>/dev/null || true
+        green "  Previous storage/ contents restored (DB and logs preserved)."
+    fi
+    # Ensure the tempdir is removed even if the trap runs later.
+    rmdir "$RESCUED_STORAGE" 2>/dev/null || true
+fi
+
 chmod 700 "$HIDDEN_DIR/storage" "$HIDDEN_DIR/storage/logs"
 
 green "Hidden dir ready at $HIDDEN_DIR"
