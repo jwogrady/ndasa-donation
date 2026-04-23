@@ -775,6 +775,25 @@ function admin_current_page(): int
 }
 
 /**
+ * Resolve the three pagination inputs the index controllers share:
+ * per-page size (clamped to the 25/50/100/500 presets), 1-based current
+ * page, and the derived zero-based offset. Returned shape matches the
+ * keys each controller already passes into its template or Metrics call.
+ *
+ * @return array{per_page:int,page:int,offset:int}
+ */
+function admin_pagination(): array
+{
+    $perPage = admin_page_size();
+    $page    = admin_current_page();
+    return [
+        'per_page' => $perPage,
+        'page'     => $page,
+        'offset'   => ($page - 1) * $perPage,
+    ];
+}
+
+/**
  * Parse YYYY-MM-DD from $_GET, returning a Unix timestamp at 00:00 in the
  * configured app timezone, or null if the input is missing or malformed.
  */
@@ -838,9 +857,7 @@ function admin_metrics(): AdminMetrics
 function render_admin_transactions(): void
 {
     $stripeMode = current_stripe_mode();
-    $perPage = admin_page_size();
-    $page    = admin_current_page();
-    $offset  = ($page - 1) * $perPage;
+    ['per_page' => $perPage, 'page' => $page, 'offset' => $offset] = admin_pagination();
 
     $emailQ  = trim((string) ($_GET['email']  ?? ''));
     $status  = (string) ($_GET['status'] ?? '');
@@ -874,9 +891,7 @@ function render_admin_transactions(): void
 function render_admin_subscriptions(): void
 {
     $stripeMode = current_stripe_mode();
-    $perPage = admin_page_size();
-    $page    = admin_current_page();
-    $offset  = ($page - 1) * $perPage;
+    ['per_page' => $perPage, 'page' => $page, 'offset' => $offset] = admin_pagination();
 
     try {
         $metrics = admin_metrics();
@@ -940,9 +955,7 @@ function render_admin_subscription(string $subId): void
 function render_admin_donors(): void
 {
     $stripeMode = current_stripe_mode();
-    $perPage = admin_page_size();
-    $page    = admin_current_page();
-    $offset  = ($page - 1) * $perPage;
+    ['per_page' => $perPage, 'page' => $page, 'offset' => $offset] = admin_pagination();
 
     try {
         $metrics = admin_metrics();
