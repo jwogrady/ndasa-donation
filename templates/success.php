@@ -24,10 +24,6 @@ $facebookHref = 'https://www.facebook.com/sharer/sharer.php?u=' . rawurlencode($
 $linkedinHref = 'https://www.linkedin.com/sharing/share-offsite/?url=' . rawurlencode($shareUrl);
 $mailHref     = 'mailto:?subject=' . rawurlencode('Supporting the NDASA Foundation')
               . '&body=' . rawurlencode($shareText . "\n\n" . $shareUrl);
-// doublethedonation.com is the industry-standard employer-matching lookup.
-// If NDASA later licenses the widget, replace this link with their embed.
-$matchingHref = 'https://doublethedonation.com/matching-gifts/';
-
 ob_start();
 ?>
 <?php if ($paymentStatus === 'paid'): ?>
@@ -195,14 +191,9 @@ ob_start();
   <div class="amplify__block">
     <h3>Does your employer match?</h3>
     <p class="muted">
-      Thousands of companies match charitable donations 1:1 or even 2:1.
-      Two minutes of paperwork can double or triple what you just gave.
-    </p>
-    <p>
-      <a class="btn btn--secondary" href="<?= Html::h($matchingHref) ?>"
-         target="_blank" rel="noopener noreferrer">
-        Check my employer's matching program &rarr;
-      </a>
+      Many companies match charitable donations 1:1 or even 2:1.
+      Check with your HR department — a few minutes of paperwork
+      could double or triple what you just gave.
     </p>
   </div>
 </section>
