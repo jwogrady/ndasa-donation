@@ -425,6 +425,17 @@ function handle_admin_stripe_mode(): void
         $db = Database::connection();
         $cfg = new AppConfig($db);
         $previous = $cfg->stripeMode();
+
+        // No-op: submitting the form when already in the target mode (stale
+        // page, double-click race, refresh-with-POST) must not pollute the
+        // audit log with "live -> live" / "test -> test" rows. Short-circuit
+        // with a neutral flash rather than mis-claim a flip happened.
+        if ($previous === $target) {
+            $label = $target === AppConfig::MODE_TEST ? 'TEST' : 'LIVE';
+            render_admin_dashboard(flashOk: "Stripe mode is already {$label}; no change applied.");
+            return;
+        }
+
         $cfg->set(AppConfig::STRIPE_MODE, $target);
         $actor = log_safe((string) ($_SERVER['PHP_AUTH_USER'] ?? '?'));
         error_log("NDASA: stripe_mode {$previous} -> {$target} by admin '{$actor}'");
