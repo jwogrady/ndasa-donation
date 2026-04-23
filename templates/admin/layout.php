@@ -267,6 +267,78 @@ $appVersion ??= '';
   }
   .mode-filter-note strong { letter-spacing: 0.08em; }
 
+  /* Pulse grid — four operational tiles (heartbeat, recurring, sparkline,
+     refund rate). Lives between the main stats row and the recent-donations
+     table. Each tile shows a label, a primary value, and a one-line caption.
+     Traffic-light colors (ok/warn/bad/gone) apply a left border; the base
+     tile stays neutral so information density reads first. */
+  .pulse {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin: 0 0 24px;
+  }
+  .pulse__tile {
+    background: var(--panel-bg, #1a1d24);
+    border: 1px solid var(--border, #2a2f38);
+    border-left-width: 3px;
+    border-radius: 8px;
+    padding: 14px 16px;
+    min-height: 100px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+  .pulse__tile--wide { grid-column: span 2; }
+  /* Status tints on the left edge — readable without relying on color alone
+     because each tile also has a text label and sub-line. */
+  .pulse__tile--ok   { border-left-color: #4fa468; }
+  .pulse__tile--warn { border-left-color: #c29632; }
+  .pulse__tile--bad  { border-left-color: #c0504d; }
+  .pulse__tile--gone { border-left-color: #6a6f7a; }
+  .pulse__label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted, #8a92a1);
+    margin-bottom: 6px;
+  }
+  .pulse__value {
+    font-size: 1.35rem;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  .pulse__unit {
+    font-size: 0.75rem;
+    color: var(--muted, #8a92a1);
+    font-weight: 400;
+    margin-left: 2px;
+  }
+  .pulse__sub {
+    margin-top: auto;
+    padding-top: 6px;
+    font-size: 0.8rem;
+    color: var(--muted, #8a92a1);
+  }
+  .pulse__spark {
+    display: block;
+    width: 100%;
+    height: 40px;
+    margin: 6px 0 2px;
+    color: #7cc68b; /* stroke picks this up via currentColor */
+    opacity: 0.9;
+  }
+
+  /* Mobile / narrow viewport: two-up then one-up. */
+  @media (max-width: 900px) {
+    .pulse { grid-template-columns: repeat(2, 1fr); }
+    .pulse__tile--wide { grid-column: span 2; }
+  }
+  @media (max-width: 520px) {
+    .pulse { grid-template-columns: 1fr; }
+    .pulse__tile--wide { grid-column: auto; }
+  }
+
   /* Stripe mode panel — live is calm/green, test is loud/amber. The pulse
      dot and hairline top border make the current mode unmistakable at a
      glance without relying on color alone. */

@@ -238,6 +238,197 @@ final class Metrics
     }
 
     /**
+     * Unix timestamp of the most recently received Stripe webhook event, or
+     * null if the server has never successfully processed one. Powers the
+     * "last webhook" heartbeat on the dashboard — a big visual signal that
+     * the ingest pipeline is alive. Not filtered by mode because Stripe
+     * delivers both live and test events to the same endpoint; the question
+     * is "is the pipe open?", not "are my live funds flowing?".
+     */
+    public function lastWebhookAt(): ?int
+    {
+        $v = $this->db->query('SELECT MAX(received_at) FROM stripe_events')->fetchColumn();
+        return $v === null || $v === false ? null : (int) $v;
+    }
+
+    /**
+     * Active recurring commitment: for every currently-paid subscription,
+     * the most recent amount_cents charged, normalized to a monthly number.
+     * Yearly subscriptions divide by 12 for apples-to-apples comparison.
+     *
+     * A subscription counts as "active" if its most recent row is `paid`
+     * (not `cancelled` or `refunded`). Multiple invoice rows per subscription
+     * are collapsed to the most recent; we use a subquery rather than a
+     * window function because SQLite 3.7.17 on prod doesn't support them.
+     *
+     * @return array{subscriptions:int,monthly_cents:int}
+     */
+    public function activeRecurringCommitment(): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT stripe_subscription_id, amount_cents, \"interval\", status
+             FROM donations d1
+             WHERE livemode = :lm
+               AND stripe_subscription_id IS NOT NULL
+               AND created_at = (
+                   SELECT MAX(created_at) FROM donations d2
+                   WHERE d2.stripe_subscription_id = d1.stripe_subscription_id
+                     AND d2.livemode = :lm2
+               )"
+        );
+        $stmt->bindValue(':lm',  $this->livemode, PDO::PARAM_INT);
+        $stmt->bindValue(':lm2', $this->livemode, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $subs = 0;
+        $monthlyCents = 0;
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            if ((string) $r['status'] !== 'paid') { continue; }
+            $subs++;
+            $amt = (int) $r['amount_cents'];
+            $monthlyCents += ((string) $r['interval']) === 'year'
+                ? intdiv($amt, 12)
+                : $amt;
+        }
+        return ['subscriptions' => $subs, 'monthly_cents' => $monthlyCents];
+    }
+
+    /**
+     * Repeat donors — people who have donated 2+ times. Ordered by total
+     * given, capped at $limit rows.
+     *
+     * Emails are lowercased before grouping so "Jane@x.com" and "jane@x.com"
+     * count as the same donor. contact_name uses the most recent donation's
+     * name (MAX(created_at) scan), not the first, so donors who changed
+     * their display name get the current spelling.
+     *
+     * @return list<array{email:string,contact_name:?string,donations:int,total_cents:int,last_at:int}>
+     */
+    public function repeatDonors(int $limit = 10): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT lower(email) AS email,
+                    COUNT(*) AS n,
+                    SUM(amount_cents) AS total,
+                    MAX(created_at) AS last_at,
+                    (SELECT contact_name FROM donations d2
+                     WHERE lower(d2.email) = lower(d1.email)
+                       AND d2.livemode = :lm2
+                       AND d2.status = 'paid'
+                     ORDER BY d2.created_at DESC LIMIT 1) AS contact_name
+             FROM donations d1
+             WHERE status = 'paid' AND livemode = :lm
+             GROUP BY lower(email)
+             HAVING COUNT(*) > 1
+             ORDER BY total DESC
+             LIMIT :n"
+        );
+        $stmt->bindValue(':lm',  $this->livemode, PDO::PARAM_INT);
+        $stmt->bindValue(':lm2', $this->livemode, PDO::PARAM_INT);
+        $stmt->bindValue(':n', max(1, min(100, $limit)), PDO::PARAM_INT);
+        $stmt->execute();
+
+        $out = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $out[] = [
+                'email'        => (string) $r['email'],
+                'contact_name' => $r['contact_name'] !== null ? (string) $r['contact_name'] : null,
+                'donations'    => (int) $r['n'],
+                'total_cents'  => (int) $r['total'],
+                'last_at'      => (int) $r['last_at'],
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Daily donation totals and counts for the last N days, oldest-first.
+     * Missing days are backfilled with zero rows so the sparkline renders
+     * flat instead of gapped. Uses SQLite's date() on a Unix epoch — cheap
+     * on the indexed (livemode, created_at) compound index.
+     *
+     * @return list<array{date:string,count:int,total_cents:int}>
+     */
+    public function dailyTotalsLast(int $days = 30): array
+    {
+        $days = max(1, min(365, $days));
+        $tz = new \DateTimeZone($_ENV['APP_TIMEZONE'] ?? 'UTC');
+        $end = (new \DateTimeImmutable('today', $tz))->modify('+1 day'); // exclusive
+        $start = $end->modify("-{$days} day");
+
+        $stmt = $this->db->prepare(
+            "SELECT date(created_at, 'unixepoch', 'localtime') AS d,
+                    COUNT(*) AS n,
+                    SUM(amount_cents) AS total
+             FROM donations
+             WHERE livemode = :lm AND status = 'paid'
+               AND created_at >= :from AND created_at < :to
+             GROUP BY d"
+        );
+        $stmt->bindValue(':lm',   $this->livemode, PDO::PARAM_INT);
+        $stmt->bindValue(':from', $start->getTimestamp(), PDO::PARAM_INT);
+        $stmt->bindValue(':to',   $end->getTimestamp(),   PDO::PARAM_INT);
+        $stmt->execute();
+        $byDate = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $byDate[(string) $r['d']] = [
+                'count'       => (int) $r['n'],
+                'total_cents' => (int) $r['total'],
+            ];
+        }
+
+        // Backfill zero days so the sparkline has a constant shape regardless
+        // of activity density. Walk in local calendar days; format matches
+        // what SQLite's date() returned above so keys align.
+        $out = [];
+        $cursor = $start;
+        while ($cursor < $end) {
+            $key = $cursor->format('Y-m-d');
+            $out[] = [
+                'date'        => $key,
+                'count'       => $byDate[$key]['count']       ?? 0,
+                'total_cents' => $byDate[$key]['total_cents'] ?? 0,
+            ];
+            $cursor = $cursor->modify('+1 day');
+        }
+        return $out;
+    }
+
+    /**
+     * Refund rate over the last N days as a percentage 0..100. Numerator is
+     * rows whose refunded_at falls inside the window; denominator is rows
+     * whose created_at falls inside the same window. That gives a "refunds
+     * per donation in this window" figure, not a cumulative refund rate,
+     * which is the signal operators actually want (is fraud or friction
+     * spiking recently?).
+     *
+     * @return array{donations:int,refunded:int,rate_pct:float}
+     */
+    public function refundRateLast(int $days = 30): array
+    {
+        $days = max(1, min(365, $days));
+        $now = time();
+        $from = $now - ($days * 86400);
+
+        $stmt = $this->db->prepare(
+            "SELECT
+                SUM(CASE WHEN created_at >= :from THEN 1 ELSE 0 END) AS donations,
+                SUM(CASE WHEN refunded_at IS NOT NULL AND refunded_at >= :from2 THEN 1 ELSE 0 END) AS refunded
+             FROM donations WHERE livemode = :lm"
+        );
+        $stmt->bindValue(':lm',   $this->livemode, PDO::PARAM_INT);
+        $stmt->bindValue(':from',  $from, PDO::PARAM_INT);
+        $stmt->bindValue(':from2', $from, PDO::PARAM_INT);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: ['donations' => 0, 'refunded' => 0];
+
+        $donations = (int) ($row['donations'] ?? 0);
+        $refunded  = (int) ($row['refunded']  ?? 0);
+        $rate = $donations === 0 ? 0.0 : round(($refunded / $donations) * 100, 1);
+        return ['donations' => $donations, 'refunded' => $refunded, 'rate_pct' => $rate];
+    }
+
+    /**
      * Record a page view. Best-effort: swallows DB errors so a failed write
      * (e.g. disk full) never prevents a donor from seeing the donation form.
      */

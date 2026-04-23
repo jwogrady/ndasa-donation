@@ -31,6 +31,11 @@
  * @var ?string          $flashOk          Success flash from the mode toggle.
  * @var ?string          $flashErr         Error flash from the mode toggle.
  * @var list<array{id:int,actor:string,action:string,detail:?string,created_at:int}> $auditEntries
+ * @var ?int             $lastWebhookAt    Unix ts of most recent webhook ingest, or null.
+ * @var array{subscriptions:int,monthly_cents:int} $recurring Active recurring commitment.
+ * @var list<array{email:string,contact_name:?string,donations:int,total_cents:int,last_at:int}> $repeatDonors
+ * @var list<array{date:string,count:int,total_cents:int}> $daily30 Last 30 calendar days, oldest-first.
+ * @var array{donations:int,refunded:int,rate_pct:float} $refundRate 30-day refund rate.
  */
 
 use NDASA\Support\Html;
@@ -132,6 +137,143 @@ ob_start();
     <div class="stat__value"><?= Html::h(number_format($conversionPct, 1)) ?>%</div>
   </div>
 </div>
+
+<?php
+// ──────── Pulse section ────────
+// Five inline panels answer five operational questions at a glance:
+// plumbing health, recurring commitment, trend, retention, refund spike.
+
+// Webhook heartbeat: render red/amber/green by age buckets.
+$hbStatus = 'gone';
+$hbLabel  = 'Never received';
+if ($lastWebhookAt !== null) {
+    $age = time() - $lastWebhookAt;
+    if ($age < 3600) {
+        $hbStatus = 'ok';
+        $hbLabel = 'within the last hour';
+    } elseif ($age < 86400) {
+        $hbStatus = 'warn';
+        $hbLabel = 'within the last day';
+    } else {
+        $hbStatus = 'bad';
+        // e.g. "3d 4h ago"
+        $d = intdiv($age, 86400);
+        $h = intdiv($age % 86400, 3600);
+        $hbLabel = ($d > 0 ? $d . 'd ' : '') . $h . 'h ago';
+    }
+}
+
+// Build a simple unit-normalized polyline for the 30-day sparkline.
+$sparkPath = '';
+$sparkMax  = 0;
+$sparkSum  = 0;
+foreach ($daily30 as $d) {
+    if ($d['total_cents'] > $sparkMax) { $sparkMax = $d['total_cents']; }
+    $sparkSum += $d['total_cents'];
+}
+if ($daily30 !== []) {
+    // SVG coordinate space: 240x40, 2px top/bottom padding.
+    $n = count($daily30);
+    $w = 240;
+    $h = 40;
+    $pad = 2;
+    $step = ($n > 1) ? ($w / ($n - 1)) : 0;
+    $points = [];
+    foreach ($daily30 as $i => $d) {
+        $x = round($i * $step, 2);
+        $y = $sparkMax > 0
+            ? round($h - $pad - (($d['total_cents'] / $sparkMax) * ($h - (2 * $pad))), 2)
+            : ($h - $pad);
+        $points[] = "{$x},{$y}";
+    }
+    $sparkPath = implode(' ', $points);
+}
+?>
+
+<div class="pulse">
+
+  <div class="pulse__tile pulse__tile--hb pulse__tile--<?= Html::h($hbStatus) ?>">
+    <div class="pulse__label">Last Webhook</div>
+    <div class="pulse__value"><?= Html::h($hbLabel) ?></div>
+    <div class="pulse__sub">
+      <?= $lastWebhookAt !== null
+          ? Html::h(date('Y-m-d H:i', $lastWebhookAt))
+          : 'Stripe events table is empty' ?>
+    </div>
+  </div>
+
+  <div class="pulse__tile">
+    <div class="pulse__label">Active Recurring</div>
+    <div class="pulse__value"><?= Html::h($fmtTotal($recurring['monthly_cents'])) ?>
+      <span class="pulse__unit">/mo</span></div>
+    <div class="pulse__sub">
+      <?= Html::h((string) $recurring['subscriptions']) ?>
+      <?= $recurring['subscriptions'] === 1 ? 'subscription' : 'subscriptions' ?>
+      (yearly plans normalized)
+    </div>
+  </div>
+
+  <div class="pulse__tile pulse__tile--wide">
+    <div class="pulse__label">Last 30 Days</div>
+    <div class="pulse__value"><?= Html::h($fmtTotal($sparkSum)) ?></div>
+    <?php if ($sparkPath !== ''): ?>
+      <svg class="pulse__spark" viewBox="0 0 240 40" preserveAspectRatio="none"
+           role="img" aria-label="30-day donation total trend">
+        <polyline fill="none" stroke="currentColor" stroke-width="1.5"
+                  points="<?= Html::h($sparkPath) ?>"/>
+      </svg>
+    <?php endif; ?>
+    <div class="pulse__sub">Daily totals (<?= Html::h((string) count($daily30)) ?> days)</div>
+  </div>
+
+  <?php
+    // Refund rate traffic light: 0% green, <2% ok, <5% warn, >=5% bad.
+    $rate = $refundRate['rate_pct'];
+    $rrStatus = $rate >= 5 ? 'bad' : ($rate >= 2 ? 'warn' : 'ok');
+  ?>
+  <div class="pulse__tile pulse__tile--<?= Html::h($rrStatus) ?>">
+    <div class="pulse__label">Refund Rate (30d)</div>
+    <div class="pulse__value"><?= Html::h(number_format($rate, 1)) ?>%</div>
+    <div class="pulse__sub">
+      <?= Html::h((string) $refundRate['refunded']) ?>
+      refunded of
+      <?= Html::h((string) $refundRate['donations']) ?>
+      donations
+    </div>
+  </div>
+
+</div>
+
+<?php if ($repeatDonors !== []): ?>
+<h2>Repeat Donors</h2>
+<div class="panel">
+  <table>
+    <thead>
+      <tr>
+        <th>Donor</th>
+        <th>Donations</th>
+        <th>Total</th>
+        <th>Last Gift</th>
+      </tr>
+    </thead>
+    <tbody>
+    <?php foreach ($repeatDonors as $rd): ?>
+      <tr>
+        <td>
+          <?= Html::h($rd['contact_name'] ?? $rd['email']) ?>
+          <?php if ($rd['contact_name'] !== null && $rd['contact_name'] !== ''): ?>
+            <span class="muted">&lt;<?= Html::h($rd['email']) ?>&gt;</span>
+          <?php endif; ?>
+        </td>
+        <td><?= Html::h((string) $rd['donations']) ?></td>
+        <td><?= Html::h($fmtTotal($rd['total_cents'])) ?></td>
+        <td><?= Html::h(date('Y-m-d', $rd['last_at'])) ?></td>
+      </tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table>
+</div>
+<?php endif; ?>
 
 <h2>Recent Donations</h2>
 <p class="muted mode-filter-note">
