@@ -32,7 +32,7 @@ namespace NDASA\Admin;
 final class Version
 {
     /** Static fallback when neither APP_VERSION nor git metadata is available. */
-    public const FALLBACK = '1.0.0';
+    public const FALLBACK = '1.1.0';
 
     public static function current(): string
     {

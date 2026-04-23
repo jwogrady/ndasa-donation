@@ -4,6 +4,14 @@ All notable changes to the NDASA Donation Platform are documented in this file. 
 
 ## Unreleased
 
+## 1.1.0 — 2026-04-23
+
+Additive release. No breaking changes to env, schema, or routes; the 1.0.0
+URL surface continues to work unchanged. Safe to upgrade in place: the
+`install.sh` deploy rescues `.env` and `storage/` across reinstalls, and
+the idempotent schema migration adds the new `livemode` column with a
+`DEFAULT 1` backfill so existing rows keep working.
+
 ### Added
 
 - **Admin console — Transactions / Subscriptions / Donors.** Three new paginated index pages in the admin nav, each with a detail drill-down. `/admin/transactions` supports email substring search, status filter, date range, and a 25/50/100/500 page-size dropdown. `/admin/subscriptions` lists one row per `stripe_subscription_id` with derived status; `/admin/subscriptions/{sub_id}` additionally calls `Stripe\Subscription::retrieve()` for authoritative live status (current period, cancel flags). `/admin/donors` lists one row per lowercased email with lifetime totals; `/admin/donors/{sha256(email)}` shows donor identity, opt-in state, every donation, any subscriptions, and lazily-fetched Stripe hosted-receipt URLs per donation. Donor URLs use a SHA-256 hash so email identifiers never land in access logs or browser history.
@@ -116,4 +124,5 @@ Initial public release of the secure-rebuild donation platform. Replaces the leg
 
 The `master` branch preserves a legacy-import commit (`c86e559`) and a breaking-change removal commit (`2b0b702`) that together record the import and removal of the pre-rebuild codebase. They are intentionally retained so the security rationale for the rebuild is auditable from git history. The 1.0.0 release is a ground-up rewrite, not derived from those trees.
 
+[1.1.0]: https://github.com/jwogrady/ndasa-donation/releases/tag/v1.1.0
 [1.0.0]: https://github.com/jwogrady/ndasa-donation/releases/tag/v1.0.0

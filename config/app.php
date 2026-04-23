@@ -93,7 +93,9 @@ define('NDASA_STRIPE_MODE', $ndasaMode);
 // Pin the Stripe API version so webhook payload shapes are stable across
 // SDK upgrades. Bump this deliberately when you've reviewed the diff.
 \Stripe\Stripe::setApiVersion('2026-03-25.dahlia');
-\Stripe\Stripe::setAppInfo('NDASA-Donation', '1.0.0', $_ENV['APP_URL']);
+// App-version identifier flows through to Stripe's request `User-Agent` so
+// the app info header and the admin footer can never drift.
+\Stripe\Stripe::setAppInfo('NDASA-Donation', \NDASA\Admin\Version::current(), $_ENV['APP_URL']);
 
 define('NDASA_BASE_PATH', rtrim(parse_url($_ENV['APP_URL'], PHP_URL_PATH) ?? '', '/'));
 
