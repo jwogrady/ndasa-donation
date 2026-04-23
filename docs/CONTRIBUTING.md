@@ -110,16 +110,32 @@ stripe trigger checkout.session.completed
 composer test
 ```
 
-Current coverage is deliberately narrow: the two primitives most exposed to untrusted input are covered.
+PHPUnit 11, PHP 8.2+. Every test runs against an in-memory SQLite DB with the same schema as production (applied via `tests/Support/DatabaseTestCase.php`) and Symfony Mailer's `null://null` transport, so the full suite is hermetic: no network, no Stripe account, no filesystem side-effects. Current suite is ~140 tests running in under 100 ms.
 
-- **`tests/Payment/AmountValidatorTest.php`** &mdash; eight cases covering the amount-parsing attack surface: simple integers, decimals, negatives, below-min, above-max, scientific notation, alphabetic input, excess decimals.
-- **`tests/Http/ClientIpTest.php`** &mdash; six cases covering the trusted-proxy chain-walker: no trusted proxies, untrusted direct peer, trusted proxy with XFF, chained trusted hops, exact-IP match, malformed XFF.
+Coverage by module:
 
-Tests use PHPUnit 11 and run against PHP 8.2+.
+- **`tests/Payment/AmountValidatorTest.php`** &mdash; amount-parsing attack surface.
+- **`tests/Payment/FeeCalculatorTest.php`** &mdash; gross-up math at boundaries.
+- **`tests/Http/ClientIpTest.php`** &mdash; trusted-proxy chain walker.
+- **`tests/Http/CsrfTest.php`** &mdash; token mint, validate, rotate.
+- **`tests/Http/RateLimiterTest.php`** &mdash; fixed-window limiter with key isolation and rollover.
+- **`tests/Support/HtmlTest.php`** &mdash; HTML escape on every dangerous character class plus UTF-8 passthrough.
+- **`tests/Webhook/EventStoreTest.php`** &mdash; idempotency, shape coercion, refund, subscription cancel.
+- **`tests/Webhook/WebhookControllerTest.php`** &mdash; dispatch across all eight handled event types: one-time, async ACH, refund, recurring, subscription delete, unknown event, handler-error rollback.
+- **`tests/Admin/AppConfigTest.php`** &mdash; runtime flags and Stripe credential resolution (live/test/legacy fallback).
+- **`tests/Admin/AuditLogTest.php`** &mdash; append-only write, truncation, swallow-on-failure.
+- **`tests/Admin/AuthTest.php`** &mdash; Basic-Auth header parser quirks (PHP_AUTH_*, FastCGI, LiteSpeed, malformed base64, colon-in-password).
+- **`tests/Admin/EnvFileTest.php`** &mdash; atomic write, comment preservation, CR/LF rejection, key/value quoting round-trip.
+- **`tests/Admin/MetricsTest.php`** &mdash; all query shapes including livemode filtering, pagination, email/status/date filters, recurring aggregation, donor-hash lookup, refund-rate window math.
 
-### What is not covered
+### Shared harness
 
-There are no end-to-end tests for the webhook pipeline, the Checkout session creation, the mail path, or the templates. Changes to those areas should include manual verification steps in the PR description (see Release expectations below).
+- **`tests/Support/DatabaseTestCase.php`** &mdash; base class that stands up a fresh in-memory SQLite DB with the production schema on every test. Extend it for anything that needs the ledger.
+- **`tests/Support/Fixtures.php`** &mdash; constructors for real `Stripe\Event` objects from array payloads that mirror the delivered webhook shapes.
+
+### What is still not covered
+
+The HTTP-request surface of `public/index.php` (front-controller routing, form rendering, admin template rendering) is exercised manually; there are no Selenium / Playwright tests. Changes to that layer should include manual verification in a PR description. `DonationService::create()` and `bin/stripe-import.php` also hit the Stripe API directly and are exercised end-to-end in Stripe test mode rather than by unit tests.
 
 Dependencies to audit:
 
