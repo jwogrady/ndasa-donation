@@ -346,6 +346,11 @@ function render_admin_dashboard(?string $flashOk = null, ?string $flashErr = nul
     $recent = [];
     $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
 
+    $lastWebhookAt       = null;
+    $recurring           = ['subscriptions' => 0, 'monthly_cents' => 0];
+    $repeatDonors        = [];
+    $daily30             = [];
+    $refundRate          = ['donations' => 0, 'refunded' => 0, 'rate_pct' => 0.0];
     try {
         $db = Database::connection();
         $metrics = new AdminMetrics($db, $stripeMode === AppConfig::MODE_LIVE);
@@ -355,6 +360,11 @@ function render_admin_dashboard(?string $flashOk = null, ?string $flashErr = nul
         $totalCents    = $metrics->totalDonationCents();
         $conversionPct = $metrics->conversionRatePercent();
         $recent        = $metrics->recentDonations(10);
+        $lastWebhookAt = $metrics->lastWebhookAt();
+        $recurring     = $metrics->activeRecurringCommitment();
+        $repeatDonors  = $metrics->repeatDonors(10);
+        $daily30       = $metrics->dailyTotalsLast(30);
+        $refundRate    = $metrics->refundRateLast(30);
     } catch (\Throwable $e) {
         error_log('Admin dashboard metrics unavailable: ' . $e->getMessage());
     }
