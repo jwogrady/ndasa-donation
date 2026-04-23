@@ -101,15 +101,18 @@ fi
 # Prefix must be exactly ".ndasa-donation" or "donation". Regex is strict
 # so a hand-created folder like "donation.bak-old" is left alone.
 #
-# Using find -print0 + bash arrays to be safe with any characters; in
-# practice these names are ASCII timestamps, but cost is trivial.
+# Read the find results via `while read` because Nexcess managed WP ships
+# bash 4.2 (too old for `mapfile -d`). Timestamp directory names are ASCII
+# and never contain spaces or newlines, so line-based reading is safe.
 shopt -s nullglob
-mapfile -d '' candidates < <(
+candidates=()
+while IFS= read -r dir; do
+    [[ -n "$dir" ]] && candidates+=("$dir")
+done < <(
     find "$BACKUP_ROOT" -maxdepth 1 -type d \
         \( -name '.ndasa-donation.bak-*' -o -name 'donation.bak-*' \) \
         -regextype posix-extended \
-        -regex '.*\.bak-[0-9]{8}-[0-9]{6}$' \
-        -print0
+        -regex '.*\.bak-[0-9]{8}-[0-9]{6}$'
 )
 
 if [[ ${#candidates[@]} -eq 0 ]]; then
