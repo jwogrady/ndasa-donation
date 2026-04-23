@@ -5,21 +5,27 @@ Server-specific install kit for the NDASA Donation Platform on Nexcess managed W
 ## Target layout
 
 ```
-public_html/                                  (chroot html root; WordPress lives here)
-├── wp-config.php, wp-admin/, ...             (WordPress, untouched)
-├── wp-content/mu-plugins/
-│   └── ndasa-shared-env.php                  (bridges .env into WP Mail SMTP)
-├── .ndasa-donation/                          (hidden; Require all denied)
-│   ├── src/ config/ templates/ public/ vendor/
-│   ├── storage/donations.sqlite
-│   ├── .env                                  (chmod 600)
-│   └── .htaccess                             (deny-all)
-└── donation/                                 (the public surface)
-    ├── .htaccess                             (rewrites + cache-bypass)
-    ├── index.php                             (shim)
-    ├── webhook.php                           (shim)
-    └── assets/                               (symlink -> ../.ndasa-donation/public/assets)
+~/                                            (user home)
+├── backups/ndasa-donation/                   (install.sh snapshots, chmod 700)
+│   ├── .ndasa-donation.bak-YYYYMMDD-HHMMSS/  (hidden-app snapshots)
+│   └── donation.bak-YYYYMMDD-HHMMSS/         (public-shim snapshots)
+└── public_html/                              (chroot html root; WordPress lives here)
+    ├── wp-config.php, wp-admin/, ...         (WordPress, untouched)
+    ├── wp-content/mu-plugins/
+    │   └── ndasa-shared-env.php              (bridges .env into WP Mail SMTP)
+    ├── .ndasa-donation/                      (hidden; Require all denied)
+    │   ├── src/ config/ templates/ public/ vendor/
+    │   ├── storage/donations.sqlite
+    │   ├── .env                              (chmod 600)
+    │   └── .htaccess                         (deny-all)
+    └── donation/                             (the public surface)
+        ├── .htaccess                         (rewrites + cache-bypass)
+        ├── index.php                         (shim)
+        ├── webhook.php                       (shim)
+        └── assets/                           (symlink -> ../.ndasa-donation/public/assets)
 ```
+
+Backups live outside the webroot so copies of `.env`, the SQLite DB, and app source are never served by the webserver, never scanned by WordPress plugins, and never miscounted against a public-asset quota. `install.sh` uses `mv` across directories on the same filesystem, which remains atomic and instant. Override the target with `BACKUP_ROOT=/some/other/path ./install.sh` if your host puts `public_html/` on a different mount. Prune old snapshots with `deploy/prune-backups.sh` (dry-run by default; see `--help`).
 
 Why a hidden `.ndasa-donation/` directory instead of a path above the webroot: Nexcess runs PHP-FPM inside a chroot at `/chroot/home/<user>/<site-id>/html/`. Files in `~/` outside that path are not visible to the PHP process, so the "code above webroot" pattern does not work here. Instead we put the code inside the chroot but outside the URL-reachable donation path, with a `Require all denied` in its `.htaccess`.
 

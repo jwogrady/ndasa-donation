@@ -3,38 +3,45 @@
 # NDASA Donation Platform — prune old install backups.
 #
 # install.sh creates timestamped backup directories whenever an existing
-# install is replaced:
+# install is replaced. Since April 2026 those snapshots live in
 #
-#   public_html/.ndasa-donation.bak-YYYYMMDD-HHMMSS/   (app code snapshot)
-#   public_html/donation.bak-YYYYMMDD-HHMMSS/          (public shim snapshot)
+#   ~/backups/ndasa-donation/.ndasa-donation.bak-YYYYMMDD-HHMMSS/
+#   ~/backups/ndasa-donation/donation.bak-YYYYMMDD-HHMMSS/
 #
-# These accumulate next to the live WordPress install, eat disk, and are
-# noise. This script finds them and can remove the old ones, keeping only
-# the most recent N by default.
+# (override via BACKUP_ROOT). Older installs wrote them directly under
+# public_html/; point BACKUP_ROOT=$HOME/public_html once to sweep those
+# legacy dirs too.
 #
 # Safety rails:
 #   • Dry-run is the default. Nothing is deleted unless --execute is passed.
 #   • Only directory names matching the exact "(.ndasa-donation|donation).bak-
 #     YYYYMMDD-HHMMSS" pattern are candidates. Any dir that doesn't match is
 #     ignored even if someone named it something similar.
-#   • The live .ndasa-donation/ and donation/ directories are never touched.
-#   • --keep N keeps the N newest snapshots (default: 3).
+#   • The live .ndasa-donation/ and donation/ directories are never touched
+#     (they aren't inside $BACKUP_ROOT under the default layout anyway, but
+#     the legacy-sweep path hits public_html where the live dirs DO live —
+#     the pattern guard keeps them safe).
+#   • --keep N keeps the N newest snapshots PER SERIES (default: 3). Both
+#     series are retained independently so --keep 3 means 3 hidden + 3 public.
 #   • --older-than DAYS only considers snapshots older than N days.
 #     Combined with --keep, BOTH conditions must hold for a dir to be deleted
 #     (i.e. "older than DAYS AND beyond the --keep retention").
 #   • Reports per-dir size and cumulative freed space.
 #
 # Usage:
-#   ./prune-backups.sh                       # dry-run, keep newest 3
+#   ./prune-backups.sh                       # dry-run, keep newest 3 per series
 #   ./prune-backups.sh --keep 5              # dry-run, keep newest 5
 #   ./prune-backups.sh --older-than 7        # dry-run, only dirs >7 days old
 #   ./prune-backups.sh --execute             # actually delete
 #   ./prune-backups.sh --keep 1 --execute    # keep only the newest
 #
+# One-time legacy sweep (old backups that ended up in public_html):
+#   BACKUP_ROOT=$HOME/public_html ./prune-backups.sh --keep 0 --execute
+#
 set -euo pipefail
 
 # ——— Defaults ———
-: "${WEBROOT:=$HOME/public_html}"
+: "${BACKUP_ROOT:=$HOME/backups/ndasa-donation}"
 KEEP=3
 OLDER_THAN_DAYS=0
 EXECUTE=0
@@ -80,7 +87,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-[[ -d "$WEBROOT" ]] || { red "WEBROOT ($WEBROOT) does not exist"; exit 1; }
+if [[ ! -d "$BACKUP_ROOT" ]]; then
+    # Not an error — the root only exists once install.sh has run at least
+    # once with the new layout. A fresh install with no prior backups is
+    # a perfectly valid state.
+    green "BACKUP_ROOT ($BACKUP_ROOT) does not exist — nothing to prune."
+    exit 0
+fi
 
 # ——— Find candidate directories ———
 #
@@ -92,7 +105,7 @@ done
 # practice these names are ASCII timestamps, but cost is trivial.
 shopt -s nullglob
 mapfile -d '' candidates < <(
-    find "$WEBROOT" -maxdepth 1 -type d \
+    find "$BACKUP_ROOT" -maxdepth 1 -type d \
         \( -name '.ndasa-donation.bak-*' -o -name 'donation.bak-*' \) \
         -regextype posix-extended \
         -regex '.*\.bak-[0-9]{8}-[0-9]{6}$' \
@@ -100,7 +113,7 @@ mapfile -d '' candidates < <(
 )
 
 if [[ ${#candidates[@]} -eq 0 ]]; then
-    green "No backup directories found in $WEBROOT — nothing to prune."
+    green "No backup directories found in $BACKUP_ROOT — nothing to prune."
     exit 0
 fi
 
@@ -168,7 +181,7 @@ classify_series() {
 
 # ——— Report ———
 bold "=== NDASA backup pruner ==="
-echo "  WEBROOT:         $WEBROOT"
+echo "  BACKUP_ROOT:     $BACKUP_ROOT"
 echo "  Keep newest:     $KEEP"
 if [[ $OLDER_THAN_DAYS -gt 0 ]]; then
     echo "  Older than:      ${OLDER_THAN_DAYS} days"
@@ -224,7 +237,7 @@ if [[ $EXECUTE -eq 1 ]]; then
             red "  SKIP unexpected name: $d"
             continue
         fi
-        if [[ "$(dirname "$d")" != "$WEBROOT" ]]; then
+        if [[ "$(dirname "$d")" != "$BACKUP_ROOT" ]]; then
             red "  SKIP unexpected parent: $d"
             continue
         fi
