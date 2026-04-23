@@ -23,6 +23,7 @@ All notable changes to the NDASA Donation Platform are documented in this file. 
 - **Site footer** with tagline, copyright year, 501(c)(3) acknowledgement, Stripe attribution.
 - **Diagnostic script** at `deploy/diagnose.sh` for read-only on-host triage.
 - **Env-sync check** at `bin/check-env-sync.php` that verifies `.env.example` and `deploy/.env.template` declare the same key set. Wired into CI.
+- **Stripe importer** at `bin/stripe-import.php`: back-fills the local `donations` table from the Stripe API for a given mode (`--mode=live|test`) and optional date window (`--from` / `--to`). Uses `EventStore::recordDonation` so the logic matches the webhook path exactly. Idempotent (INSERT OR IGNORE on order_id); supports `--dry-run` for pre-flight. Lets operators recover from missed webhooks, DB resets, or fresh installs that need history.
 - **CI workflow** at `.github/workflows/ci.yml`: `php -l` on the tree, env-sync check, PHPUnit.
 
 ### Changed
