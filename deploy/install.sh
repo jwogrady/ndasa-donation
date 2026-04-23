@@ -216,21 +216,18 @@ trap cleanup_rescued EXIT
 
 # ——— Step 1: Hidden app directory ———
 bold "[1/6] Creating hidden app directory"
-mkdir -p "$HIDDEN_DIR"/{src,config,templates,public,storage}
-# Copy the app tree. Exclude node_modules, tests, deploy tooling, dotfiles.
-rsync -a --delete \
-    --exclude='/.git/' \
-    --exclude='/.github/' \
-    --exclude='/.claude/' \
-    --exclude='/deploy/' \
-    --exclude='/tests/' \
-    --exclude='/storage/' \
-    --exclude='/.env' \
-    --exclude='/.env.example' \
-    "$REPO_DIR/src/"       "$HIDDEN_DIR/src/"
-rsync -a --delete  "$REPO_DIR/config/"    "$HIDDEN_DIR/config/"
-rsync -a --delete  "$REPO_DIR/templates/" "$HIDDEN_DIR/templates/"
-rsync -a --delete  "$REPO_DIR/public/"    "$HIDDEN_DIR/public/"
+mkdir -p "$HIDDEN_DIR"/{src,config,templates,public,bin,storage}
+# Copy the app tree. Each rsync is scoped to a single subdirectory so
+# only intended parts land in the deployed tree — `deploy/`, `tests/`,
+# and dotfiles are never copied.
+rsync -a --delete  "$REPO_DIR/src/"        "$HIDDEN_DIR/src/"
+rsync -a --delete  "$REPO_DIR/config/"     "$HIDDEN_DIR/config/"
+rsync -a --delete  "$REPO_DIR/templates/"  "$HIDDEN_DIR/templates/"
+rsync -a --delete  "$REPO_DIR/public/"     "$HIDDEN_DIR/public/"
+# bin/ holds operator CLI tools (stripe-import, check-env-sync). The app
+# itself doesn't need them at runtime, but operators do, and /bin/ is
+# Require-all-denied by the hidden dir's .htaccess so it isn't web-served.
+rsync -a --delete  "$REPO_DIR/bin/"        "$HIDDEN_DIR/bin/"
 cp "$REPO_DIR/composer.json" "$HIDDEN_DIR/composer.json"
 [[ -f "$REPO_DIR/composer.lock" ]] && cp "$REPO_DIR/composer.lock" "$HIDDEN_DIR/composer.lock"
 
