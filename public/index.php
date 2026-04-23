@@ -61,6 +61,11 @@ try {
         $method === 'POST' && $path === '/admin/config'       => handle_admin_config(),
         $method === 'POST' && $path === '/admin/stripe-mode'  => handle_admin_stripe_mode(),
         $method === 'GET'  && $path === '/admin/export'       => handle_admin_export(),
+        $method === 'GET'  && $path === '/admin/transactions' => render_admin_transactions(),
+        $method === 'GET'  && $path === '/admin/subscriptions' => render_admin_subscriptions(),
+        $method === 'GET'  && str_starts_with($path, '/admin/subscriptions/') => render_admin_subscription(substr($path, strlen('/admin/subscriptions/'))),
+        $method === 'GET'  && $path === '/admin/donors'       => render_admin_donors(),
+        $method === 'GET'  && str_starts_with($path, '/admin/donors/') => render_admin_donor(substr($path, strlen('/admin/donors/'))),
         $method === 'GET'  && str_starts_with($path, '/admin/donations/') => render_admin_donation(substr($path, strlen('/admin/donations/'))),
         default => not_found(),
     };
@@ -754,4 +759,217 @@ function render_admin_donation(string $orderId): void
     $appVersion = AdminVersion::current();
 
     require __DIR__ . '/../templates/admin/donation.php';
+}
+
+/**
+ * Parse the "page size" query parameter and clamp to the allowed presets.
+ * Lives here (not a helper elsewhere) because only the index pages use it.
+ */
+function admin_page_size(): int
+{
+    $raw = (int) ($_GET['per_page'] ?? 25);
+    return in_array($raw, [25, 50, 100, 500], true) ? $raw : 25;
+}
+
+/** Parse YYYY-MM-DD from $_GET or return null. Silent on malformed input. */
+function admin_parse_date(string $key): ?int
+{
+    $raw = (string) ($_GET[$key] ?? '');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw)) {
+        return null;
+    }
+    try {
+        $tz = new \DateTimeZone($_ENV['APP_TIMEZONE'] ?? 'UTC');
+        return (new \DateTimeImmutable($raw . ' 00:00:00', $tz))->getTimestamp();
+    } catch (\Throwable) {
+        return null;
+    }
+}
+
+function render_admin_transactions(): void
+{
+    $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
+    $perPage = admin_page_size();
+    $page    = max(1, (int) ($_GET['page'] ?? 1));
+    $offset  = ($page - 1) * $perPage;
+
+    $emailQ  = trim((string) ($_GET['email']  ?? ''));
+    $status  = (string) ($_GET['status'] ?? '');
+    $fromRaw = (string) ($_GET['from']  ?? '');
+    $toRaw   = (string) ($_GET['to']    ?? '');
+    $fromTs  = admin_parse_date('from');
+    // Inclusive-to by adding a day; null if unparseable.
+    $toTs = null;
+    if ($toRaw !== '' && admin_parse_date('to') !== null) {
+        try {
+            $tz = new \DateTimeZone($_ENV['APP_TIMEZONE'] ?? 'UTC');
+            $toTs = (new \DateTimeImmutable($toRaw . ' 00:00:00', $tz))
+                ->modify('+1 day')->getTimestamp();
+        } catch (\Throwable) {
+            $toTs = null;
+        }
+    }
+
+    $filters = [
+        'email'   => $emailQ,
+        'status'  => $status,
+        'from_ts' => $fromTs,
+        'to_ts'   => $toTs,
+        'limit'   => $perPage,
+        'offset'  => $offset,
+    ];
+
+    try {
+        $metrics = new AdminMetrics(Database::connection(), $stripeMode === AppConfig::MODE_LIVE);
+        $rows  = $metrics->listTransactions($filters);
+        $total = $metrics->countTransactions($filters);
+    } catch (\Throwable $e) {
+        error_log('Transactions index failed: ' . $e->getMessage());
+        http_response_code(500);
+        render_error('Could not load transactions.');
+        return;
+    }
+
+    $appVersion = AdminVersion::current();
+    require __DIR__ . '/../templates/admin/transactions.php';
+}
+
+function render_admin_subscriptions(): void
+{
+    $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
+    $perPage = admin_page_size();
+    $page    = max(1, (int) ($_GET['page'] ?? 1));
+    $offset  = ($page - 1) * $perPage;
+
+    try {
+        $metrics = new AdminMetrics(Database::connection(), $stripeMode === AppConfig::MODE_LIVE);
+        $rows  = $metrics->listSubscriptions($perPage, $offset);
+        $total = $metrics->countSubscriptions();
+    } catch (\Throwable $e) {
+        error_log('Subscriptions index failed: ' . $e->getMessage());
+        http_response_code(500);
+        render_error('Could not load subscriptions.');
+        return;
+    }
+
+    $appVersion = AdminVersion::current();
+    require __DIR__ . '/../templates/admin/subscriptions.php';
+}
+
+function render_admin_subscription(string $subId): void
+{
+    // Stripe subscription ids are "sub_" followed by 14+ alnum chars.
+    if (!preg_match('/^sub_[A-Za-z0-9]+$/', $subId)) {
+        not_found();
+        return;
+    }
+    $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
+
+    try {
+        $metrics  = new AdminMetrics(Database::connection(), $stripeMode === AppConfig::MODE_LIVE);
+        $invoices = $metrics->subscriptionInvoices($subId);
+    } catch (\Throwable $e) {
+        error_log('Subscription detail lookup failed: ' . $e->getMessage());
+        http_response_code(500);
+        render_error('Could not load subscription details.');
+        return;
+    }
+
+    if ($invoices === []) {
+        not_found();
+        return;
+    }
+
+    // Live status from Stripe — one API call, authoritative. If Stripe is
+    // unreachable the page still renders with a "status unknown" hint.
+    $liveStatus  = null;
+    $liveDetails = null;
+    try {
+        $sub = \Stripe\Subscription::retrieve($subId);
+        $liveStatus = (string) ($sub->status ?? 'unknown');
+        $liveDetails = [
+            'current_period_end'   => (int) ($sub->current_period_end   ?? 0),
+            'current_period_start' => (int) ($sub->current_period_start ?? 0),
+            'cancel_at'            => $sub->cancel_at !== null ? (int) $sub->cancel_at : null,
+            'cancel_at_period_end' => (bool) ($sub->cancel_at_period_end ?? false),
+        ];
+    } catch (\Throwable $e) {
+        error_log('Stripe subscription retrieve failed for ' . $subId . ': ' . $e->getMessage());
+    }
+
+    $appVersion = AdminVersion::current();
+    require __DIR__ . '/../templates/admin/subscription.php';
+}
+
+function render_admin_donors(): void
+{
+    $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
+    $perPage = admin_page_size();
+    $page    = max(1, (int) ($_GET['page'] ?? 1));
+    $offset  = ($page - 1) * $perPage;
+
+    try {
+        $metrics = new AdminMetrics(Database::connection(), $stripeMode === AppConfig::MODE_LIVE);
+        $rows  = $metrics->listDonors($perPage, $offset);
+        $total = $metrics->countDonors();
+    } catch (\Throwable $e) {
+        error_log('Donors index failed: ' . $e->getMessage());
+        http_response_code(500);
+        render_error('Could not load donors.');
+        return;
+    }
+
+    $appVersion = AdminVersion::current();
+    require __DIR__ . '/../templates/admin/donors.php';
+}
+
+function render_admin_donor(string $emailHash): void
+{
+    // SHA-256 hex is 64 lowercase chars. Format-check before DB hit so a
+    // garbage URL never flows into the scan-and-compare loop.
+    if (!preg_match('/^[a-f0-9]{64}$/', $emailHash)) {
+        not_found();
+        return;
+    }
+    $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
+
+    try {
+        $donor = (new AdminMetrics(Database::connection(), $stripeMode === AppConfig::MODE_LIVE))
+            ->findDonorByEmailHash($emailHash);
+    } catch (\Throwable $e) {
+        error_log('Donor detail lookup failed: ' . $e->getMessage());
+        http_response_code(500);
+        render_error('Could not load donor details.');
+        return;
+    }
+
+    if ($donor === null) {
+        not_found();
+        return;
+    }
+
+    // Build Stripe receipt URLs by looking up each donation's Charge via
+    // its PaymentIntent. One API call per donation; acceptable on a single
+    // donor page (worst case a handful of calls). Cache within the request.
+    $receiptUrls = [];
+    foreach ($donor['donations'] as $d) {
+        $pi = $d['payment_intent_id'] ?? null;
+        if ($pi === null) { continue; }
+        try {
+            $intent = \Stripe\PaymentIntent::retrieve([
+                'id'     => $pi,
+                'expand' => ['latest_charge'],
+            ]);
+            $charge = $intent->latest_charge ?? null;
+            if ($charge !== null && isset($charge->receipt_url) && $charge->receipt_url !== '') {
+                $receiptUrls[$pi] = (string) $charge->receipt_url;
+            }
+        } catch (\Throwable $e) {
+            // Silent — the detail page still renders without that link.
+            error_log('Stripe receipt lookup failed for PI ' . $pi . ': ' . $e->getMessage());
+        }
+    }
+
+    $appVersion = AdminVersion::current();
+    require __DIR__ . '/../templates/admin/donor.php';
 }

@@ -6,7 +6,7 @@
  * @var string $body        Pre-rendered body HTML (escaping is the caller's
  *                           responsibility — templates must run values through
  *                           NDASA\Support\Html::h() before interpolating).
- * @var string $active      Optional nav key: "dashboard" or "config".
+ * @var string $active      Optional nav key: "dashboard", "transactions", "subscriptions", "donors", or "config".
  * @var string $appVersion  Resolved app version string for the footer.
  */
 
@@ -267,6 +267,73 @@ $appVersion ??= '';
   }
   .mode-filter-note strong { letter-spacing: 0.08em; }
 
+  /* Index-page utilities — shared across /admin/transactions,
+     /admin/subscriptions, /admin/donors. Kept close together so any tweak
+     flows through all three indexes with one CSS edit. */
+  .index-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-end;
+    margin: 0 0 16px;
+    padding: 14px;
+    background: var(--panel-bg, #1a1d24);
+    border: 1px solid var(--border, #2a2f38);
+    border-radius: 8px;
+  }
+  .index-filters label { margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; }
+  .index-filters input, .index-filters select {
+    padding: 6px 8px;
+    min-width: 140px;
+    background: #0f1117;
+    color: inherit;
+    border: 1px solid var(--border, #2a2f38);
+    border-radius: 4px;
+  }
+  .index-filters button { margin: 0; }
+  .index-filters .clear { align-self: flex-end; color: var(--muted, #8a92a1); text-decoration: none; font-size: 0.85rem; }
+  .index-filters .clear:hover { color: #fff; }
+
+  .pager {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin: 12px 0;
+    font-size: 0.9rem;
+    color: var(--muted, #8a92a1);
+  }
+  .pager__links a, .pager__links .disabled {
+    display: inline-block;
+    padding: 4px 10px;
+    margin-left: 4px;
+    border: 1px solid var(--border, #2a2f38);
+    border-radius: 4px;
+    text-decoration: none;
+    color: inherit;
+  }
+  .pager__links a:hover { background: #2c2f38; color: #fff; }
+  .pager__links .disabled { opacity: 0.4; pointer-events: none; }
+
+  /* Donor detail header card — at-a-glance identity + lifetime totals. */
+  .donor-header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 20px;
+    padding: 18px;
+    background: var(--panel-bg, #1a1d24);
+    border: 1px solid var(--border, #2a2f38);
+    border-radius: 8px;
+    margin-bottom: 20px;
+  }
+  .donor-header__stat { text-align: right; }
+  .donor-header__stat-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted, #8a92a1); }
+  .donor-header__stat-value { font-size: 1.5rem; font-weight: 600; }
+  .donor-header__email { color: var(--muted, #8a92a1); font-size: 0.95rem; }
+  .donor-header__optin { margin-top: 8px; font-size: 0.85rem; }
+  .donor-header__optin--yes { color: #7cc68b; }
+  .donor-header__optin--no  { color: #c29632; }
+
   /* Pulse grid — four operational tiles (heartbeat, recurring, sparkline,
      refund rate). Lives between the main stats row and the recent-donations
      table. Each tile shows a label, a primary value, and a one-line caption.
@@ -449,6 +516,9 @@ $appVersion ??= '';
   </a>
   <nav>
     <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin" class="<?= $active === 'dashboard' ? 'active' : '' ?>">Dashboard</a>
+    <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/transactions" class="<?= $active === 'transactions' ? 'active' : '' ?>">Transactions</a>
+    <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/subscriptions" class="<?= $active === 'subscriptions' ? 'active' : '' ?>">Subscriptions</a>
+    <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/donors" class="<?= $active === 'donors' ? 'active' : '' ?>">Donors</a>
     <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/config" class="<?= $active === 'config' ? 'active' : '' ?>">Config</a>
   </nav>
 </header>
