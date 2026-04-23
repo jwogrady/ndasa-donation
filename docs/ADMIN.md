@@ -386,18 +386,20 @@ No database migration is required for rollbacks; the schema is append-only acros
 
 ## Backup hygiene
 
-Every `install.sh` run leaves a timestamped backup pair in `~/backups/ndasa-donation/` (overridable via `BACKUP_ROOT`). Prune old ones with `deploy/prune-backups.sh`:
+Every `install.sh` run leaves a timestamped backup pair in `~/backups/ndasa-donation/` (overridable via `BACKUP_ROOT`). Prune old ones with `deploy/prune-backups.sh`, run from your **repo checkout** (not the deployed app — `install.sh` deliberately excludes `deploy/` from what it copies into `public_html/`):
 
 ```sh
-~/public_html/.ndasa-donation/deploy/prune-backups.sh                           # dry-run, keep 3 per series
-~/public_html/.ndasa-donation/deploy/prune-backups.sh --keep 5 --older-than 14 --execute
+cd ~/apps/ndasa-donation     # your repo checkout, wherever you cloned it
+./deploy/prune-backups.sh                                   # dry-run, keep 3 per series
+./deploy/prune-backups.sh --keep 5 --older-than 14 --execute
 ```
 
-The script retains each series independently (`.ndasa-donation.bak-*` and `donation.bak-*` counted separately), refuses to touch anything whose name doesn't match the strict `YYYYMMDD-HHMMSS` timestamp pattern, and double-checks the parent directory immediately before every `rm -rf`. See `deploy/prune-backups.sh --help` for the full option list.
+The script retains each series independently (`.ndasa-donation.bak-*` and `donation.bak-*` counted separately), refuses to touch anything whose name doesn't match the strict `YYYYMMDD-HHMMSS` timestamp pattern, and double-checks the parent directory immediately before every `rm -rf`. See `./deploy/prune-backups.sh --help` for the full option list.
 
 For a one-time sweep of legacy snapshots that older installer versions placed directly under `public_html/`, point `BACKUP_ROOT` at that directory:
 
 ```sh
-BACKUP_ROOT=$HOME/public_html ~/public_html/.ndasa-donation/deploy/prune-backups.sh --keep 0 --execute
+cd ~/apps/ndasa-donation
+BACKUP_ROOT=$HOME/public_html ./deploy/prune-backups.sh --keep 0 --execute
 ```
 
