@@ -348,7 +348,7 @@ function render_admin_dashboard(?string $flashOk = null, ?string $flashErr = nul
 
     try {
         $db = Database::connection();
-        $metrics = new AdminMetrics($db);
+        $metrics = new AdminMetrics($db, $stripeMode === AppConfig::MODE_LIVE);
         $pageViews     = $metrics->pageViewCount();
         $donationCount = $metrics->donationCount();
         $donorCount    = $metrics->donorCount();
@@ -660,8 +660,11 @@ function handle_admin_export(): void
         return;
     }
 
+    $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
+    $isLive = $stripeMode === AppConfig::MODE_LIVE;
+
     try {
-        $rows = (new AdminMetrics(Database::connection()))->donationsInRange($fromTs, $toTs);
+        $rows = (new AdminMetrics(Database::connection(), $isLive))->donationsInRange($fromTs, $toTs);
     } catch (\Throwable $e) {
         error_log('CSV export failed: ' . $e->getMessage());
         http_response_code(500);
@@ -669,10 +672,13 @@ function handle_admin_export(): void
         return;
     }
 
+    // Mode is baked into the filename so a test-mode export can never be
+    // mistaken for a live-mode accounting report after download.
+    $modeSlug = $isLive ? 'live' : 'test';
     $suffix = ($fromRaw !== '' || $toRaw !== '')
         ? '_' . ($fromRaw ?: 'all') . '_' . ($toRaw ?: 'all')
         : '_' . date('Ymd');
-    $filename = 'ndasa-donations' . $suffix . '.csv';
+    $filename = 'ndasa-donations-' . $modeSlug . $suffix . '.csv';
 
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
@@ -719,8 +725,11 @@ function render_admin_donation(string $orderId): void
         return;
     }
 
+    $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
+
     try {
-        $donation = (new AdminMetrics(Database::connection()))->findDonation($orderId);
+        $donation = (new AdminMetrics(Database::connection(), $stripeMode === AppConfig::MODE_LIVE))
+            ->findDonation($orderId);
     } catch (\Throwable $e) {
         error_log('Donation detail lookup failed: ' . $e->getMessage());
         http_response_code(500);
@@ -732,8 +741,6 @@ function render_admin_donation(string $orderId): void
         not_found();
         return;
     }
-
-    $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
     $appVersion = AdminVersion::current();
 
     require __DIR__ . '/../templates/admin/donation.php';

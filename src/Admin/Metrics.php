@@ -36,7 +36,18 @@ final class Metrics
     private ?array $donationAggregate = null;
     private ?float $conversionPercent = null;
 
-    public function __construct(private readonly PDO $db) {}
+    /**
+     * 1 (live) | 0 (test) — filters every donation query so the dashboard
+     * only surfaces rows matching the admin's currently active Stripe mode.
+     * Page views are not filtered; they're a traffic metric independent of
+     * which Stripe mode is handling payments at the moment.
+     */
+    private readonly int $livemode;
+
+    public function __construct(private readonly PDO $db, bool $isLive = true)
+    {
+        $this->livemode = $isLive ? 1 : 0;
+    }
 
     public function pageViewCount(): int
     {
@@ -56,10 +67,13 @@ final class Metrics
         if ($this->donationAggregate !== null) {
             return $this->donationAggregate;
         }
-        $row = $this->db->query(
+        $stmt = $this->db->prepare(
             "SELECT COUNT(*) AS c, COUNT(DISTINCT lower(email)) AS d, COALESCE(SUM(amount_cents), 0) AS t
-             FROM donations WHERE status = 'paid'"
-        )->fetch(PDO::FETCH_ASSOC) ?: ['c' => 0, 'd' => 0, 't' => 0];
+             FROM donations WHERE status = 'paid' AND livemode = :lm"
+        );
+        $stmt->bindValue(':lm', $this->livemode, PDO::PARAM_INT);
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: ['c' => 0, 'd' => 0, 't' => 0];
 
         return $this->donationAggregate = [
             'count'  => (int) $row['c'],
@@ -116,9 +130,11 @@ final class Metrics
         $stmt = $this->db->prepare(
             'SELECT order_id, contact_name, email, amount_cents, currency, status, created_at, refunded_at, dedication, "interval"
              FROM donations
+             WHERE livemode = :lm
              ORDER BY created_at DESC
              LIMIT :n'
         );
+        $stmt->bindValue(':lm', $this->livemode, PDO::PARAM_INT);
         $stmt->bindValue(':n', max(1, min(100, $limit)), PDO::PARAM_INT);
         $stmt->execute();
         /** @var list<array<string,mixed>> $rows */
@@ -153,9 +169,9 @@ final class Metrics
             'SELECT order_id, payment_intent_id, contact_name, email, amount_cents, currency, status,
                     created_at, refunded_at, dedication, email_optin, "interval",
                     stripe_subscription_id, stripe_customer_id
-             FROM donations WHERE order_id = :oid'
+             FROM donations WHERE order_id = :oid AND livemode = :lm'
         );
-        $stmt->execute([':oid' => $orderId]);
+        $stmt->execute([':oid' => $orderId, ':lm' => $this->livemode]);
         $r = $stmt->fetch();
         if ($r === false) {
             return null;
@@ -190,9 +206,10 @@ final class Metrics
             'SELECT order_id, payment_intent_id, contact_name, email, amount_cents, currency, status,
                     created_at, refunded_at, dedication, email_optin, "interval", stripe_subscription_id
              FROM donations
-             WHERE created_at >= :from AND created_at < :to
+             WHERE livemode = :lm AND created_at >= :from AND created_at < :to
              ORDER BY created_at ASC'
         );
+        $stmt->bindValue(':lm',   $this->livemode, PDO::PARAM_INT);
         $stmt->bindValue(':from', $fromTs, PDO::PARAM_INT);
         $stmt->bindValue(':to',   $toTs,   PDO::PARAM_INT);
         $stmt->execute();
