@@ -7,11 +7,11 @@ Forward-looking plan for the NDASA Donation Platform. This file reflects what th
 **Donor flow**
 - One-time / monthly / yearly frequency toggle (default one-time)
 - Preset amounts ($25/$50/$100/$250/$500) plus free-form "Other"
-- Clickable impact cards that select an amount and scroll the form into view
+- Clickable impact cards that select an amount and scroll the frequency block into view
 - Live fee-cover gross-up; default opt-in
 - Optional dedication field (stored in Stripe metadata + local column)
 - Newsletter opt-in checkbox (pre-checked; stored per-donation)
-- Mobile-first layout: form above impact/allocation on small viewports
+- Mobile-first layout: impact cards render immediately after the hero, above the amount picker, on small viewports; desktop uses the same DOM order
 - Rotating donor-header slogans with three animation modes; respects `prefers-reduced-motion`
 - Subpath-aware routing
 
@@ -24,24 +24,29 @@ Forward-looking plan for the NDASA Donation Platform. This file reflects what th
 - Webhook events handled: `checkout.session.completed`, `checkout.session.async_payment_{succeeded,failed}`, `charge.refunded`, `payment_intent.payment_failed`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.deleted`
 - First-invoice dedupe vs the signup `checkout.session.completed`; recurring charges keyed by `inv_<invoice_id>`
 - Stripe Customer Portal link on the success page for recurring-donor self-serve cancel / payment-method update
+- Every donation tagged with `livemode` (1 live / 0 test) from the verified event; dashboard, CSV export, and detail views filter by the admin's active mode
 
 **Success page**
 - Truthful `paid` / `unpaid` (async) / `unknown` states
 - Animated gratitude heart on confirmed paid
 - Subscription-aware "Manage or cancel" section
 - Share buttons (X, Facebook, LinkedIn, email) with prefilled copy
-- Double-the-Donation employer-matching lookup link
+- Generic "check with your HR department" employer-matching note (no external lookup link)
 
 **Admin panel** (HTTP Basic Auth)
-- Dashboard metrics (total donations, donor count, page views, conversion rate) from a single consolidated SQL aggregation
-- Recent Donations table with Frequency column, rows link to per-donation detail
-- Donation detail page at `/admin/donations/{order_id}` with mode-aware deep links into Stripe (PaymentIntent + Subscription)
-- CSV export at `/admin/export` with optional date range; includes interval, subscription id, dedication, newsletter opt-in
-- Append-only Admin Activity audit log (config saves diff changed keys only; never values)
-- System Health groups: Database, Environment, Configuration; every probe try/catch-wrapped
-- `.env` config editor with per-field validation, atomic write, CSRF
-- Runtime Stripe live/test mode toggle persisted in `app_config`
-- Version resolver: `APP_VERSION` → short git hash → hardcoded fallback
+- **Dashboard** with four scalar stats plus a **pulse** row: Last Webhook heartbeat (age-bucketed), Active Recurring commitment ($/mo, yearly normalized), 30-day donations sparkline, 30-day refund rate.
+- **Repeat-donors panel** rendered below the pulse when any donor has more than one paid gift.
+- **Recent Donations** (10 rows) with per-row detail link.
+- **Transactions index** at `/admin/transactions` with email search, status filter, date range, 25/50/100/500 page-size dropdown; links to per-donation detail.
+- **Subscriptions index + detail** at `/admin/subscriptions{/<sub_id>}`. Detail page hits Stripe for authoritative live status (current period, cancel flags) and lists every invoice row tagged with that subscription.
+- **Donors index + detail** at `/admin/donors{/<sha256(email)>}`. Index is one row per lowercased email, ordered by lifetime giving. Detail shows identity, opt-in state, every donation, any subscriptions, and per-donation Stripe hosted-receipt URLs. Donor URLs are SHA-256 hashes so emails never land in access logs.
+- Donation detail page at `/admin/donations/{order_id}` with mode-aware deep links into Stripe (PaymentIntent + Subscription).
+- CSV export at `/admin/export` with optional date range; filename embeds `-live-` or `-test-` slug; includes interval, subscription id, dedication, newsletter opt-in.
+- Append-only Admin Activity audit log (config saves diff changed keys only; never values).
+- System Health groups: Database, Environment, Configuration; every probe try/catch-wrapped.
+- `.env` config editor with per-field validation, atomic write, CSRF.
+- Runtime Stripe live/test mode toggle persisted in `app_config`.
+- Version resolver: `APP_VERSION` → short git hash → hardcoded fallback.
 
 **Security**
 - PCI-DSS SAQ-A (card entry on `checkout.stripe.com`)
@@ -56,9 +61,13 @@ Forward-looking plan for the NDASA Donation Platform. This file reflects what th
 - Webhook content never persists PANs; prepared statements only
 
 **Infrastructure**
-- SQLite database, WAL journal; schema auto-migrates on connection; 3.7.17-safe (no `UPSERT`, `RETURNING`, or window functions)
-- Indexes: `idx_donations_created_at`, `idx_donations_status`, `idx_donations_subscription`, `idx_page_views_created_at`, `idx_admin_audit_created_at`
+- SQLite database, WAL journal; schema auto-migrates on connection; 3.7.17-safe (no `UPSERT`, `RETURNING`, window functions, `RENAME COLUMN`, or `DROP COLUMN`)
+- Indexes: `idx_donations_created_at`, `idx_donations_status`, `idx_donations_subscription`, `idx_donations_livemode_created_at`, `idx_donations_livemode_status`, `idx_page_views_created_at`, `idx_admin_audit_created_at`
 - Nexcess managed-WordPress deploy kit (`install.sh`, Apache shims, PHP shims, WP mu-plugin bridging `.env` into WP Mail SMTP)
+- `install.sh` preserves `.env` and `storage/` across reinstalls; backups written to `~/backups/ndasa-donation/` (not the webroot); staged safety copy survives mid-install failure
+- `deploy/prune-backups.sh` with dry-run default, per-series retention, `--older-than` filter, and hard regex/parent-dir guard on `rm`
+- Mailer falls back to local `sendmail://default` when SMTP env is absent, so missing SMTP never takes the webhook down
+- `bin/stripe-import.php` back-fills the local ledger from the Stripe API (idempotent, mode-scoped, date-windowable, dry-runnable)
 - Read-only `deploy/diagnose.sh` for on-host triage
 - `bin/check-env-sync.php` verifies `.env.example` and `deploy/.env.template` declare the same keys
 - CI (`.github/workflows/ci.yml`): `php -l`, env-sync, PHPUnit
@@ -66,7 +75,7 @@ Forward-looking plan for the NDASA Donation Platform. This file reflects what th
 
 ## In Progress
 
-- **Content placeholders** in donor-visible templates (`{{PLACEHOLDER}}` blocks): allocation percentages, EIN, mailing address, planned-giving contact, newsletter URL, and the $25/$100/$500 impact copy — impact tiers have been rewritten to match `ndasafoundation.org/about/causes/`, but the hero headline and allocation bars still reference the legacy positioning ("drug-free communities") and need a coordinated content pass against the real foundation programs.
+- **Content placeholders** in donor-visible templates (`{{PLACEHOLDER}}` blocks): EIN, real mailing address for check donations, planned-giving contact, newsletter URL. A coordinated content pass against the live foundation site is still outstanding for these specific fields.
 
 ## Next: User-Facing Features (Top 5)
 
@@ -78,11 +87,11 @@ Forward-looking plan for the NDASA Donation Platform. This file reflects what th
 
 ## Next: Dashboard / Admin / Internal Features (Top 5)
 
-1. **Active subscriber view**: filter recent donations by interval, show count and MRR derived from the existing `donations.interval` + `stripe_subscription_id` columns.
-2. **Trend charts**: daily/weekly donations and page-views over 30/90 days, rendered from `donations(created_at)` and `page_views(created_at)` — both already indexed.
-3. **Webhook replay / inspector**: surface recent `stripe_events` rows with a re-dispatch button for the existing `WebhookController`.
-4. **Admin-side subscription cancel**: button on the donation detail view that calls `Stripe\Subscription::cancel`, authenticated by the same CSRF token the config editor uses.
-5. **Dashboard metrics-failure banner**: when the metrics try/catch hits, show an inline warning above the stat tiles instead of silent zeros.
+1. **Webhook replay / inspector**: surface recent `stripe_events` rows with a re-dispatch button for the existing `WebhookController`.
+2. **Admin-side subscription cancel**: button on the subscription detail view that calls `Stripe\Subscription::cancel`, authenticated by the same CSRF token the config editor uses.
+3. **Dashboard metrics-failure banner**: when the metrics try/catch hits, show an inline warning above the stat tiles instead of silent zeros.
+4. **Nightly backup-pruner cron entry** documented in `deploy/README.md` as a copy-paste snippet (`--keep 5 --older-than 14 --execute`).
+5. **Donor search on the donors index** (server-side email substring match, same pattern as `/admin/transactions`).
 
 ## Later / Optional
 
@@ -95,3 +104,5 @@ Forward-looking plan for the NDASA Donation Platform. This file reflects what th
 - Log rotation config for `storage/logs/` or syslog integration
 - CSV export streamed via generator for very large result sets
 - Multi-tenant / per-campaign donation pages
+- Hour-of-day / day-of-week donations heatmap
+- Event-type histogram (7-day `stripe_events` `GROUP BY type`) on the dashboard
