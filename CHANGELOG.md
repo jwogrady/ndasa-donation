@@ -29,6 +29,7 @@ All notable changes to the NDASA Donation Platform are documented in this file. 
 - **Diagnostic script** at `deploy/diagnose.sh` for read-only on-host triage.
 - **Env-sync check** at `bin/check-env-sync.php` that verifies `.env.example` and `deploy/.env.template` declare the same key set. Wired into CI.
 - **CI workflow** at `.github/workflows/ci.yml`: `php -l` on the tree, env-sync check, PHPUnit.
+- **Comprehensive test suite.** 138 PHPUnit tests across 13 files covering the full webhook dispatch path (one-time and recurring flows, idempotency, refund handling, async ACH, subscription cancel, handler-error rollback), the event store, the Metrics query surface (livemode filtering, pagination, filters, recurring aggregation, donor detail hash lookup), the rate limiter, CSRF, admin config, audit log, basic-auth header parsing, the `.env` updater, fee calculation, HTML escaping, and value coercion. Tests use an in-memory SQLite DB with the same schema as production and Symfony Mailer's `null://null` transport — zero network, zero Stripe account, zero filesystem side-effects. Full suite runs in ~70 ms. `tests/Support/DatabaseTestCase.php` and `tests/Support/Fixtures.php` are the shared harness for DB-backed tests and Stripe event fixtures respectively.
 
 ### Changed
 
