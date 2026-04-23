@@ -84,6 +84,19 @@ final class Database
             // sessions for the donor to cancel/manage from the success page.
             $pdo->exec('ALTER TABLE donations ADD COLUMN stripe_customer_id TEXT');
         }
+        if (!isset($existingCols['livemode'])) {
+            // 1 = live-mode event (real money), 0 = test-mode event (Stripe
+            // sandbox). Sourced from the verified Stripe event's `livemode`
+            // field, not from our admin mode toggle — the event is the truth.
+            //
+            // Pre-livemode rows existed before this column; every deployed
+            // environment so far is live-only (no test traffic touched the
+            // prod DB), so backfilling to 1 is correct. If a future env ever
+            // needs a different backfill, do it by hand before the migration
+            // (set the column's values, then the idempotent ADD COLUMN below
+            // is a no-op).
+            $pdo->exec('ALTER TABLE donations ADD COLUMN livemode INTEGER NOT NULL DEFAULT 1');
+        }
         $pdo->exec('CREATE TABLE IF NOT EXISTS rate_limit (
             key TEXT PRIMARY KEY,
             count INTEGER NOT NULL,
@@ -113,6 +126,10 @@ final class Database
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_donations_created_at ON donations(created_at)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_donations_status      ON donations(status)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_donations_subscription ON donations(stripe_subscription_id)');
+        // Every dashboard query filters by livemode + status/created_at;
+        // compound index keeps mode-filtered ordering as a single index walk.
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_donations_livemode_created_at ON donations(livemode, created_at)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_donations_livemode_status     ON donations(livemode, status)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_page_views_created_at ON page_views(created_at)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_admin_audit_created_at ON admin_audit(created_at)');
     }

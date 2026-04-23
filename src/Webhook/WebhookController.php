@@ -103,6 +103,10 @@ final class WebhookController
         $customerId      = (string) ($session->customer ?? '');
         $amountCents     = (int)    ($session->amount_total ?? 0);
         $currency        = (string) ($session->currency ?? 'usd');
+        // Stripe sets `livemode` on the session object itself — default true
+        // so pre-column-change test fixtures don't silently get tagged as
+        // test data.
+        $livemode        = (bool)   ($session->livemode ?? true);
         $email           = (string) (($session->customer_details->email ?? null)
                                   ?? ($session->customer_email ?? ''));
         $name            = (string) ($session->customer_details->name ?? '');
@@ -142,6 +146,7 @@ final class WebhookController
             'stripe_customer_id'     => $customerId !== '' ? $customerId : null,
             'dedication'             => $dedication,
             'email_optin'            => $emailOptin,
+            'livemode'               => $livemode,
         ]);
 
         // Stripe emails the donor via receipt_email; notify staff ourselves.
@@ -197,6 +202,7 @@ final class WebhookController
         $email      = (string) ($invoice->customer_email ?? '');
         $name       = (string) ($invoice->customer_name ?? '');
         $piId       = (string) ($invoice->payment_intent ?? '');
+        $livemode   = (bool)   ($invoice->livemode ?? true);
 
         if ($invoiceId === '' || $amountPaid <= 0 || $email === '') {
             error_log('Webhook: invoice.paid missing required fields (invoice ' . $invoiceId . ')');
@@ -245,6 +251,7 @@ final class WebhookController
             'stripe_customer_id'     => $customerId !== '' ? $customerId : null,
             'dedication'             => '',
             'email_optin'            => null,
+            'livemode'               => $livemode,
         ]);
     }
 

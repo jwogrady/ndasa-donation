@@ -27,7 +27,7 @@ final class EventStore
         return $stmt->rowCount() === 1;
     }
 
-    /** @param array{order_id:string,payment_intent_id:?string,amount_cents:int,currency:string,email:string,contact_name:string,status:string,dedication?:string,email_optin?:?bool,interval?:?string,stripe_subscription_id?:?string,stripe_customer_id?:?string} $d */
+    /** @param array{order_id:string,payment_intent_id:?string,amount_cents:int,currency:string,email:string,contact_name:string,status:string,dedication?:string,email_optin?:?bool,interval?:?string,stripe_subscription_id?:?string,stripe_customer_id?:?string,livemode?:bool} $d */
     public function recordDonation(array $d): void
     {
         $dedication = (string) ($d['dedication'] ?? '');
@@ -35,10 +35,13 @@ final class EventStore
         $interval   = $d['interval'] ?? null;
         $subId      = $d['stripe_subscription_id'] ?? null;
         $custId     = $d['stripe_customer_id'] ?? null;
+        // Default to live so tests and fixtures that omit this flag don't
+        // silently land in the test bucket and disappear from the dashboard.
+        $livemode   = ($d['livemode'] ?? true) ? 1 : 0;
         $this->db->prepare('INSERT OR IGNORE INTO donations
             (order_id, payment_intent_id, amount_cents, currency, email, contact_name, status, created_at,
-             dedication, email_optin, "interval", stripe_subscription_id, stripe_customer_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+             dedication, email_optin, "interval", stripe_subscription_id, stripe_customer_id, livemode)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
             ->execute([
                 $d['order_id'],
                 $d['payment_intent_id'],
@@ -53,6 +56,7 @@ final class EventStore
                 $interval !== null && $interval !== '' && $interval !== 'once' ? $interval : null,
                 $subId   !== null && $subId   !== '' ? $subId   : null,
                 $custId  !== null && $custId  !== '' ? $custId  : null,
+                $livemode,
             ]);
     }
 

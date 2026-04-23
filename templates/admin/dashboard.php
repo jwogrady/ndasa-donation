@@ -134,6 +134,10 @@ ob_start();
 </div>
 
 <h2>Recent Donations</h2>
+<p class="muted mode-filter-note">
+  Showing <strong><?= $isTest ? 'TEST' : 'LIVE' ?></strong> donations only.
+  Metrics, the table below, and the CSV export all reflect the current Stripe mode.
+</p>
 <div class="panel">
   <form method="get" action="<?= Html::h(NDASA_BASE_PATH) ?>/admin/export" class="export-form">
     <label>

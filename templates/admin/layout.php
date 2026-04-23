@@ -258,6 +258,15 @@ $appVersion ??= '';
   .export-form .help { flex-basis: 100%; margin: 0; }
   .export-form button { margin-top: 0; }
 
+  /* Recent-donations filter note. Sits between the heading and the table so
+     "the current Stripe mode is filtering this data" is stated once, clearly,
+     rather than inferred from the mode panel up top. */
+  .mode-filter-note {
+    margin: -4px 0 12px;
+    font-size: 0.9rem;
+  }
+  .mode-filter-note strong { letter-spacing: 0.08em; }
+
   /* Stripe mode panel — live is calm/green, test is loud/amber. The pulse
      dot and hairline top border make the current mode unmistakable at a
      glance without relying on color alone. */

@@ -209,6 +209,8 @@ final class HealthCheck
             'idx_donations_created_at',
             'idx_donations_status',
             'idx_donations_subscription',
+            'idx_donations_livemode_created_at',
+            'idx_donations_livemode_status',
             'idx_page_views_created_at',
         ];
         $missing = [];
