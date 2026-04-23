@@ -99,10 +99,13 @@ if ($opts['mode'] === null) {
 // ——— Credential resolution ——————————————————————————————————————————————
 //
 // config/app.php already initialized the Stripe SDK using the admin's
-// *currently selected* mode. We need to override that with the --mode flag
-// so an import of the other mode works without flipping the admin toggle.
-
-$creds = AppConfig::resolveStripeCredentials($opts['mode'], $_ENV);
+// *currently selected* mode. It also rewrote $_ENV['STRIPE_SECRET_KEY']
+// with that mode's key, which means resolveStripeCredentials(live, $_ENV)
+// would incorrectly pick up the test key via the legacy fallback whenever
+// the admin toggle is set to test. Re-read the raw .env so the importer's
+// mode selection is independent of the admin toggle — that's its whole job.
+$rawEnv = (new \NDASA\Admin\EnvFile($root . '/.env'))->read();
+$creds  = AppConfig::resolveStripeCredentials($opts['mode'], $rawEnv);
 if ($creds === null) {
     fwrite(STDERR, sprintf(
         "stripe-import: --mode=%s selected, but its credentials aren't in .env.\n",
