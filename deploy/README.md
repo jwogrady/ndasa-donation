@@ -72,12 +72,14 @@ cd ndasa-donation
 The script:
 
 1. Validates PHP version and extensions.
-2. Backs up any existing `public_html/.ndasa-donation/` or `public_html/donation/` with a timestamped `.bak-YYYYMMDD-HHMMSS` suffix.
-3. Copies the app into `public_html/.ndasa-donation/` and runs `composer install --no-dev`.
-4. Seeds `.env` from [deploy/.env.template](.env.template) with the correct absolute `DB_PATH` for the detected chroot.
-5. Writes the public shims into `public_html/donation/`.
-6. Installs the mu-plugin at `public_html/wp-content/mu-plugins/ndasa-shared-env.php`.
-7. Runs a config-load dry run as a final sanity check.
+2. On a re-run, rescues the live `.env` and the entire `storage/` tree (SQLite DB, WAL/SHM journals, logs) to a private tempdir. Also stages a `storage.safety-copy/` inside the pending backup dir as a belt-and-braces second copy.
+3. Moves any existing `public_html/.ndasa-donation/` and `public_html/donation/` to `~/backups/ndasa-donation/.ndasa-donation.bak-YYYYMMDD-HHMMSS/` and `~/backups/ndasa-donation/donation.bak-YYYYMMDD-HHMMSS/` (overridable via `BACKUP_ROOT`, chmod 700).
+4. Copies the app into `public_html/.ndasa-donation/` and runs `composer install --no-dev`.
+5. Restores the rescued `.env` and `storage/` contents into the new install. Once the restore is confirmed (non-empty `donations.sqlite` present), removes the staged safety copy from the backup dir so one canonical DB lives on disk.
+6. Seeds `.env` from [deploy/.env.template](.env.template) on a fresh install (skipped on upgrade — the rescued `.env` is authoritative).
+7. Writes the public shims into `public_html/donation/`.
+8. Installs the mu-plugin at `public_html/wp-content/mu-plugins/ndasa-shared-env.php`.
+9. Runs a config-load dry run as a final sanity check.
 
 It pauses for `y/N` confirmation before writing anything into `public_html/`, and every step prints what it is about to do.
 
@@ -111,28 +113,45 @@ It pauses for `y/N` confirmation before writing anything into `public_html/`, an
 
 ## Rollback
 
+Restore from the newest snapshot in `~/backups/ndasa-donation/` (or your `BACKUP_ROOT`):
+
 ```sh
-# Take the new install down.
-mv ~/public_html/donation       ~/donation.new.bak-$(date +%Y%m%d)
-mv ~/public_html/.ndasa-donation ~/ndasa-donation.new.bak-$(date +%Y%m%d)
+# Identify the newest snapshot pair
+ls -lt ~/backups/ndasa-donation/ | head
 
-# Restore the legacy app from its pre-install backup (if you want).
-mv ~/donation.legacy.YYYYMMDD ~/public_html/donation
-
-# Remove the mu-plugin so WP Mail SMTP stops reading from the (now missing) .env.
-rm ~/public_html/wp-content/mu-plugins/ndasa-shared-env.php
-
-# Manually re-enter the SMTP password in WP Mail SMTP settings since the
-# constants are gone.
+# Move the broken install out of the way and restore the backup pair
+TAG=YYYYMMDD-HHMMSS  # fill in the newest one from the ls above
+mv ~/public_html/.ndasa-donation                     ~/backups/ndasa-donation/.ndasa-donation.bad
+mv ~/backups/ndasa-donation/.ndasa-donation.bak-$TAG ~/public_html/.ndasa-donation
+mv ~/public_html/donation                            ~/backups/ndasa-donation/donation.bad
+mv ~/backups/ndasa-donation/donation.bak-$TAG        ~/public_html/donation
 ```
 
-The backups created by `install.sh` on re-runs use the `bak-YYYYMMDD-HHMMSS` suffix; keep the most recent one for at least a release cycle.
+If `install.sh` aborted mid-deploy and printed a `storage.safety-copy` path, copy its contents back into `~/public_html/.ndasa-donation/storage/` to restore runtime data:
+
+```sh
+cp -a ~/backups/ndasa-donation/.ndasa-donation.bak-$TAG/storage.safety-copy/. \
+      ~/public_html/.ndasa-donation/storage/
+```
+
+To revert to the pre-NDASA-rebuild legacy app:
+
+```sh
+mv ~/public_html/donation        ~/donation.new.bak-$(date +%Y%m%d)
+mv ~/public_html/.ndasa-donation ~/ndasa-donation.new.bak-$(date +%Y%m%d)
+mv ~/donation.legacy.YYYYMMDD    ~/public_html/donation
+rm ~/public_html/wp-content/mu-plugins/ndasa-shared-env.php
+# Manually re-enter the SMTP password in WP Mail SMTP settings since the
+# mu-plugin constants are gone.
+```
+
+Prune old snapshots you no longer need with `deploy/prune-backups.sh` (dry-run by default; see `--help`).
 
 ## Updating
 
-To deploy a new version of the app, re-run `./deploy/install.sh` from an updated repo checkout. It will back up the current install and replace it. Your `.env`, `storage/donations.sqlite`, and `storage/logs/` are preserved (they live only in the backup copy; the new install is seeded fresh except for those files, which the installer carries forward &mdash; see script).
+To deploy a new version of the app, re-run `./deploy/install.sh` from an updated repo checkout. The script automatically rescues `.env` and the entire `storage/` tree (SQLite DB, WAL journals, logs) before renaming the old install, and restores them into the fresh install after `composer install` completes. A staged `storage.safety-copy/` inside the backup dir additionally survives mid-install failure. No manual `.env` or DB file copy is required — the script handles both.
 
-Note: the current script does *not* carry forward `.env` automatically on reinstall &mdash; the back-up-and-replace is full. If you re-run, copy `.env` from the `.bak-*` directory into the new `.ndasa-donation/`. A future iteration of the installer will handle this automatically.
+If the restore somehow leaves `storage/` empty (e.g. silent rsync permission issue), the safety copy is preserved in the backup dir and its path is printed to stderr so the operator can recover it by hand.
 
 ## Operational notes
 

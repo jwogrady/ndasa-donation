@@ -17,6 +17,12 @@ There are five preset buttons (**$25**, **$50**, **$100**, **$250**, **$500**) a
 
 If a donor types a custom amount that matches a preset (for example, `100`), the preset button switches to reflect the selection automatically. If they type a custom value like `100.50`, **Other** is selected.
 
+Above the amount picker, three **impact cards** describe what specific gift sizes fund. Clicking a card selects the matching preset and scrolls the frequency block into view.
+
+## Choosing a frequency
+
+Below the amount, donors pick **One-time**, **Monthly**, or **Yearly**. One-time is the default. Monthly and yearly donations create a Stripe subscription at checkout; the first charge happens immediately, and renewals continue automatically on the same day each period. Donors can cancel at any time from the link on the thank-you page (see **After payment**). The donate button and the live total preview update to reflect the chosen frequency, e.g. **"Give $100.00 monthly →"**.
+
 ## Covering processing fees
 
 Below the amount field, donors see a short explanation that card fees take a small amount out of each donation, with the exact dollar figure shown live next to the choice:
@@ -35,18 +41,19 @@ This preview is informational; the final amount shown on Stripe's checkout page 
 
 The submit button reflects the donor's current amount in real time &mdash; for example, **"Donate $100.00 securely →"**. When no valid amount is selected the button reads **"Choose an amount above"** so the next action is always clear. After the donor clicks the button, it changes to **"Redirecting to secure checkout…"** while the payment session is created, so there is no ambiguity about whether the click registered.
 
+## Dedicating the donation (optional)
+
+A short text field below the contact details lets donors dedicate the gift "in memory of" or "in honor of" someone (up to 200 characters). The dedication is shared with NDASA staff on the internal notification email but is **not** printed on the donor's Stripe receipt.
+
+## Newsletter opt-in
+
+A checkbox below the email field, pre-checked, lets the donor choose to receive occasional updates about the impact of their gift. Unchecking it before donating records the preference; the donation still completes normally.
+
 ## Proceeding to Stripe
 
-When the donor clicks **Continue to secure checkout**, the application validates the amount and contact details, creates a Stripe Checkout session, and redirects the browser to Stripe's hosted payment page. **Card details are entered on Stripe, not on this site.**
+When the donor clicks the donate button, the application validates the amount and contact details, creates a Stripe Checkout session, and redirects the browser to Stripe's hosted payment page. **Card details are entered on Stripe, not on this site.**
 
-On the Stripe page the donor may see:
-
-- A card-entry form.
-- **Link** (Stripe's one-click payment method), if the donor has an account.
-- **Apple Pay** or **Google Pay** on supported devices and browsers.
-- **ACH Direct Debit** for US bank transfers, if enabled on the foundation's Stripe account.
-
-Which methods appear is controlled by the foundation's Stripe dashboard; the application requests Stripe to surface all enabled methods automatically.
+On the Stripe page the donor enters a card. The application currently requests **card** as the payment method — Apple Pay, Google Pay, Link, and ACH are not enabled on this account. If new payment methods are enabled in the Stripe dashboard in the future, they will appear at checkout automatically.
 
 ## After payment
 
@@ -54,11 +61,13 @@ Which methods appear is controlled by the foundation's Stripe dashboard; the app
 
 Once Stripe confirms the donor's payment, the browser returns to a **thank-you page** that shows one of three messages:
 
-1. **"Thank you for your support"** &mdash; card and wallet payments. The donation completed successfully and Stripe has sent the donor's receipt.
-2. **"Your donation is being processed"** &mdash; ACH and other bank-backed methods. These take one to several business days to clear. No further action is required; Stripe will email a receipt once the payment confirms.
+1. **"Thank you for your support"** &mdash; card payments. The donation completed successfully and Stripe has sent the donor's receipt.
+2. **"Your donation is being processed"** &mdash; bank-backed methods such as ACH, if later enabled. These take one to several business days to clear. No further action is required; Stripe will email a receipt once the payment confirms.
 3. **"We're confirming your donation"** &mdash; the thank-you page could not retrieve the current payment status in time. This is rare; the donor's payment still proceeds independently, and the receipt email is the authoritative confirmation.
 
 All three states tell the donor to check their email for a receipt, note that the foundation is a 501(c)(3), and invite them to keep the receipt for tax records.
+
+For **recurring donations**, the thank-you page also shows a "Manage or cancel this donation" link that opens Stripe's Customer Portal, where the donor can update their card, change the amount on their next renewal, or cancel the subscription without contacting the foundation. A generic "check with your HR department for employer matching" note and share buttons (X, Facebook, LinkedIn, email) round out the page.
 
 ### Cancel page
 

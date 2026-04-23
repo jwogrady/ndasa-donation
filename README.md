@@ -76,9 +76,10 @@ Donors get a Stripe-sent receipt and (for recurring) a Stripe Customer Portal li
 <td width="50%" valign="top">
 
 ### 🧭  Admin panel
-- Metrics dashboard (donations, donors, page views, conversion rate)
-- Recent Donations with per-row detail and Stripe deep links
-- CSV export with date-range filter
+- Dashboard with pulse tiles: **webhook heartbeat**, active recurring $/mo, 30-day sparkline, 30-day refund rate
+- **Transactions / Subscriptions / Donors** indexes with pagination (25/50/100/500) and filters
+- Per-donation, per-subscription (with live Stripe status), per-donor detail pages
+- CSV export with date-range filter · filename tags live vs test
 - Append-only audit log (config saves, mode toggles)
 - Grouped system health (DB / env / config)
 - Atomic `.env` config editor (CSRF + CR/LF rejected)
@@ -130,9 +131,9 @@ php -S 127.0.0.1:8000 -t public
 |---|---|
 | Donor form | <http://127.0.0.1:8000/> |
 | Admin panel | <http://127.0.0.1:8000/admin> |
-| Webhook endpoint | <http://127.0.0.1:8000/webhook> |
+| Webhook endpoint | <http://127.0.0.1:8000/webhook.php> |
 
-Forward Stripe events to the local endpoint with `stripe listen --forward-to localhost:8000/webhook`.
+Forward Stripe events to the local endpoint with `stripe listen --forward-to localhost:8000/webhook.php`.
 
 ## Configuration
 
@@ -185,7 +186,9 @@ composer install --no-dev --optimize-autoloader
 # reload PHP-FPM so opcache picks up changes
 ```
 
-For a fresh install on Nexcess managed WordPress, use the kit in [`deploy/`](deploy/) — `install.sh`, Apache `.htaccess` shims, PHP front-controller shims, and a WordPress mu-plugin (`ndasa-shared-env.php`) that bridges `.env` into WP Mail SMTP.
+For a fresh install or upgrade on Nexcess managed WordPress, use the kit in [`deploy/`](deploy/) — `install.sh`, Apache `.htaccess` shims, PHP front-controller shims, `prune-backups.sh`, and a WordPress mu-plugin (`ndasa-shared-env.php`) that bridges `.env` into WP Mail SMTP.
+
+Runtime data is preserved across every reinstall: `install.sh` rescues `.env` and the entire `storage/` tree (SQLite DB + logs + WAL/SHM journals), writes a snapshot of the previous install to `~/backups/ndasa-donation/` (overridable via `BACKUP_ROOT`), and restores the runtime data into the fresh install. A staged safety copy inside the backup dir survives mid-install failures. Prune old snapshots with `deploy/prune-backups.sh` (dry-run by default). See [`deploy/README.md`](deploy/README.md).
 
 Writable-path requirements:
 
@@ -193,13 +196,22 @@ Writable-path requirements:
 - `DB_PATH` — must be writable by the PHP-FPM user
 - `storage/logs/` — must be writable
 
+### Backfill from Stripe
+
+`bin/stripe-import.php` reads Stripe directly (sessions, invoices, charges) and writes through the same ledger path the webhook uses. Useful after a webhook outage, a DB reset, or a fresh install that needs history. Required `--mode=live|test`, optional `--from` / `--to` (YYYY-MM-DD), `--dry-run`, `--yes`, `--verbose`. Idempotent — safe to re-run.
+
 ## Admin
 
 - URL: `/admin`
 - Auth: HTTP Basic Auth (`ADMIN_USER` / `ADMIN_PASS`)
-- Config editor at `/admin/config` — atomic writes to `.env`. Some values read at bootstrap (Stripe keys, timezone, CSP) need a PHP-FPM reload; donation bounds, SMTP, and the Stripe mode toggle don't.
-- CSV export: `/admin/export?from=YYYY-MM-DD&to=YYYY-MM-DD` (both optional)
-- Per-donation detail: `/admin/donations/{order_id}` — deep links into Stripe dashboard for PaymentIntent and Subscription
+- Nav: Dashboard / Transactions / Subscriptions / Donors / Config
+- Indexes (`/admin/transactions`, `/admin/subscriptions`, `/admin/donors`) — paginated (25/50/100/500); transactions index supports email search, status, and date range
+- Detail pages:
+  - `/admin/donations/{order_id}` — per-donation, with Stripe dashboard deep links
+  - `/admin/subscriptions/{sub_id}` — per-subscription, calls Stripe for authoritative live status
+  - `/admin/donors/{sha256(email)}` — per-donor, hashed URL keeps emails out of access logs
+- Config editor at `/admin/config` — atomic writes to `.env`. Bootstrap-driven values (Stripe keys, timezone, CSP) need a PHP-FPM reload; the live/test Stripe mode toggle doesn't.
+- CSV export: `/admin/export?from=YYYY-MM-DD&to=YYYY-MM-DD` (both optional); filename includes `-live-` or `-test-`
 
 ## Documentation
 

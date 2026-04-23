@@ -9,26 +9,28 @@ If you are a donor, see [USER.md](USER.md). If you are responsible for running t
 ```
 .
 ├── public/                 (document root; nothing else should be web-reachable)
-│   ├── index.php           (front controller for GET /, POST /checkout, GET /success, admin routes)
+│   ├── index.php           (front controller: donor routes + admin routes)
 │   ├── webhook.php         (Stripe webhook entry point)
 │   ├── .htaccess           (Apache hardening + rewrite rules)
-│   └── assets/css/         (stylesheet)
+│   └── assets/             (css, fonts, img)
 ├── config/
 │   └── app.php             (env load, security headers, session, Stripe SDK init)
 ├── src/
-│   ├── Admin/              (Auth, EnvFile, HealthCheck, Metrics, Version)
+│   ├── Admin/              (AppConfig, AuditLog, Auth, EnvFile, HealthCheck, Metrics, Version)
 │   ├── Http/               (Csrf, RateLimiter, ClientIp)
 │   ├── Mail/               (ReceiptMailer)
 │   ├── Payment/            (AmountValidator, FeeCalculator, DonationService)
 │   ├── Support/            (Database, Html)
 │   └── Webhook/            (WebhookController, EventStore)
 ├── templates/
-│   ├── admin/              (layout, dashboard, config)
+│   ├── admin/              (layout, dashboard, config, donation, donor(s), subscription(s), transactions, _pager)
 │   └── …                   (form, success, error, layout for the donation flow)
+├── bin/                    (CLI: check-env-sync.php, stripe-import.php)
 ├── tests/                  (PHPUnit)
-├── deploy/                 (Nexcess-specific install kit; not part of the app proper)
+├── deploy/                 (Nexcess-specific install kit + prune-backups.sh; not part of the app proper)
 ├── storage/                (runtime: SQLite DB + logs; gitignored)
 ├── composer.json
+├── composer.lock
 ├── phpunit.xml
 └── .env.example
 ```
@@ -39,19 +41,22 @@ The `public/` tree is the only directory exposed by URL in any sensible deployme
 
 These are the files most often touched by changes:
 
-- [public/index.php](../public/index.php) &mdash; tiny front controller. Routes `GET /`, `POST /checkout`, `GET /success`, and the three admin routes. Subpath-aware: strips the path prefix of `APP_URL` before matching. All `/admin*` paths pass through `AdminAuth::require()` immediately before dispatch.
-- [public/webhook.php](../public/webhook.php) &mdash; verifies the Stripe signature, constructs the event, and hands it to the webhook controller. Returns non-2xx only on handler failure (so Stripe retries).
-- [config/app.php](../config/app.php) &mdash; loads `.env`, validates required env vars, configures the Stripe SDK (with a pinned API version), emits security headers for browser responses, starts a hardened session. Webhook handler opts out of session handling via `NDASA_SKIP_SESSION`.
-- [src/Payment/DonationService.php](../src/Payment/DonationService.php) &mdash; wraps `Stripe\Checkout\Session::create`. Uses `automatic_payment_methods`; the deterministic idempotency key (`sess_<order_id>`) prevents double-submission from creating two Stripe sessions.
-- [src/Webhook/WebhookController.php](../src/Webhook/WebhookController.php) &mdash; dispatches Stripe events (`checkout.session.completed`, `.async_payment_succeeded`, `.async_payment_failed`, `charge.refunded`, `payment_intent.payment_failed`). Returns a boolean; the entry point decides HTTP status. Sync and async success paths converge on `recordPaidSession()`.
-- [src/Webhook/EventStore.php](../src/Webhook/EventStore.php) &mdash; the idempotency log and donation ledger. `markProcessed()` uses `INSERT OR IGNORE` + `rowCount()` so duplicate deliveries are detected atomically.
-- [src/Mail/ReceiptMailer.php](../src/Mail/ReceiptMailer.php) &mdash; staff notifications. Builds a Symfony Mailer `Dsn` from discrete `SMTP_*` env components (or accepts a pre-formed `SMTP_DSN`). Donor receipts are sent by Stripe, not by this class.
-- [src/Support/Database.php](../src/Support/Database.php) &mdash; lazy-singleton PDO handle on SQLite. Self-migrating (tables, indexes). WAL, foreign keys, 5 s busy timeout; prepared statements only.
+- [public/index.php](../public/index.php) &mdash; front controller. Donor routes (`GET /`, `POST /checkout`, `GET /success`) plus admin routes (`GET /admin`, `/admin/config`, `/admin/export`, `/admin/transactions`, `/admin/subscriptions{/<sub_id>}`, `/admin/donors{/<sha256>}`, `/admin/donations/{order_id}`). Subpath-aware: strips the path prefix of `APP_URL` before matching. All `/admin*` paths pass through `AdminAuth::require()` immediately before dispatch.
+- [public/webhook.php](../public/webhook.php) &mdash; verifies the Stripe signature against both live and test secrets (first-match-wins), constructs the event, and hands it to the webhook controller. Returns non-2xx only on handler failure so Stripe retries.
+- [config/app.php](../config/app.php) &mdash; loads `.env`, validates required env vars, resolves Stripe credentials for the currently active mode via `AppConfig::resolveStripeCredentials()`, configures the Stripe SDK (with a pinned API version), emits security headers, starts a hardened session. Webhook handler opts out of session handling via `NDASA_SKIP_SESSION`.
+- [src/Payment/DonationService.php](../src/Payment/DonationService.php) &mdash; wraps `Stripe\Checkout\Session::create` for one-time and subscription flows. Uses explicit `payment_method_types: ['card']` (the NDASA account rejects `automatic_payment_methods`). A deterministic idempotency key (`sess_<order_id>`) prevents double-submission from creating two Stripe sessions. Also exposes `createPortalSession()` for the success-page self-serve link.
+- [src/Webhook/WebhookController.php](../src/Webhook/WebhookController.php) &mdash; dispatches all eight Stripe events: `checkout.session.completed`, `.async_payment_succeeded`, `.async_payment_failed`, `charge.refunded`, `payment_intent.payment_failed`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.deleted`. Sync and async success paths converge on `recordPaidSession()`; subscription invoices go through `onInvoicePaid()` which dedupes the first invoice against its signup session via `metadata.order_id`.
+- [src/Webhook/EventStore.php](../src/Webhook/EventStore.php) &mdash; the idempotency log and donation ledger. Two-phase: `isProcessed()` check → handler run → `markProcessed()`. `recordDonation()` is the single canonical insert path used by both the webhook and `bin/stripe-import.php`.
+- [src/Mail/ReceiptMailer.php](../src/Mail/ReceiptMailer.php) &mdash; staff notifications via Symfony Mailer. DSN resolution order: `SMTP_DSN` → discrete `SMTP_*` → `sendmail://default` fallback. Never throws during construction, so a missing SMTP config cannot take the webhook handler down. Donor receipts are sent by Stripe, not by this class.
+- [src/Support/Database.php](../src/Support/Database.php) &mdash; lazy-singleton PDO handle on SQLite. Self-migrating (tables, indexes). Every schema extension is idempotent and 3.7.17-safe (pragma probe + `ALTER TABLE ADD COLUMN`). WAL, foreign keys, 5 s busy timeout; prepared statements only.
+- [src/Admin/AppConfig.php](../src/Admin/AppConfig.php) &mdash; runtime toggles backed by the `app_config` SQLite table. Canonical source for `stripeMode()` and `resolveStripeCredentials()`.
+- [src/Admin/AuditLog.php](../src/Admin/AuditLog.php) &mdash; append-only log of privileged admin actions. Config saves log changed-key names only; secret values are never written.
 - [src/Admin/Auth.php](../src/Admin/Auth.php) &mdash; HTTP Basic Auth gate with a hardened `HTTP_AUTHORIZATION` fallback parser. Constant-time credential comparison.
 - [src/Admin/EnvFile.php](../src/Admin/EnvFile.php) &mdash; safe `.env` reader/updater. Preserves comments and unknown keys; writes to `.env.tmp` + `rename()` for atomicity; rejects CR/LF injection.
-- [src/Admin/Metrics.php](../src/Admin/Metrics.php) &mdash; read-only aggregate queries for the dashboard. All counts/sums filtered to `status = 'paid'`; per-instance memoisation.
+- [src/Admin/Metrics.php](../src/Admin/Metrics.php) &mdash; read-only aggregate queries for every admin page. Constructor takes `(PDO, bool $isLive)`; every donation query binds the livemode flag. Per-instance memoisation on the scalar aggregates.
 - [src/Admin/HealthCheck.php](../src/Admin/HealthCheck.php) &mdash; grouped system health (Database, Environment, Configuration). Every probe is try/catch-wrapped; nothing throws.
 - [src/Admin/Version.php](../src/Admin/Version.php) &mdash; resolves the admin-footer version string: `APP_VERSION` env → short git hash → fallback constant.
+- [bin/stripe-import.php](../bin/stripe-import.php) &mdash; CLI back-fill tool. Reads Stripe Sessions, Invoices, Charges directly; writes via `EventStore::recordDonation()` so schema can't drift from the webhook path. Idempotent, mode-scoped, date-windowable, dry-runnable.
 
 ## Local development
 
@@ -66,11 +71,13 @@ cp .env.example .env
 
 Fill in the following in `.env`:
 
-- `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` with Stripe **test-mode** values.
-- `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD`, or `SMTP_DSN`. For local-only work, `SMTP_DSN=null://null` will swallow mail without sending it.
-- `DB_PATH` to an absolute path outside the repo tree, e.g. `/tmp/ndasa.sqlite`.
+- `STRIPE_TEST_SECRET_KEY` and `STRIPE_TEST_WEBHOOK_SECRET` with Stripe **test-mode** values. The admin mode toggle defaults to `live`; for local development, flip it to `test` from `/admin` (the live keys can stay empty, or you can set them to your test values as a fallback).
+- `ADMIN_USER` and `ADMIN_PASS` for the admin panel's HTTP Basic Auth.
+- `DB_PATH` to an absolute path, e.g. `/home/you/projects/ndasa-donation/storage/donations.sqlite`.
 - `APP_URL=http://127.0.0.1:8000` for the built-in server.
 - `APP_ENV=development` (anything other than `production`) to disable HTTPS enforcement.
+- `MAIL_FROM` and `MAIL_BCC_INTERNAL` — any placeholder addresses for local work.
+- SMTP is optional. For local-only work, leaving all `SMTP_*` vars unset drops mail into the local MTA via `sendmail://default`, which usually silently accepts the message on a dev box without delivering it. `SMTP_DSN=null://null` also works if the local MTA is disabled.
 
 ### Running the app
 
@@ -89,7 +96,7 @@ stripe login
 stripe listen --forward-to http://127.0.0.1:8000/webhook.php
 ```
 
-The `stripe listen` output includes a temporary `whsec_...` secret &mdash; paste it into `STRIPE_WEBHOOK_SECRET` in `.env` for the duration of the dev session.
+The `stripe listen` output includes a temporary `whsec_...` secret &mdash; paste it into `STRIPE_TEST_WEBHOOK_SECRET` (or `STRIPE_WEBHOOK_SECRET` if you are using the legacy fallback) in `.env` for the duration of the dev session.
 
 Trigger events with:
 
@@ -142,7 +149,8 @@ This is a small application with a tight scope. Resist expansion:
 - New dependencies must earn their place; consider the audit surface.
 - New tables or columns in SQLite should use `CREATE TABLE IF NOT EXISTS` and `ALTER TABLE ADD COLUMN` idempotent migrations added to `Database::migrate()`.
 - New Stripe event types should be added to the `match` in `WebhookController::dispatch()` and to the webhook endpoint's event list in the Stripe dashboard. The two must stay synchronised.
-- New environment variables must be added to both `.env.example` and the "Required" / "Optional" tables in [ADMIN.md](ADMIN.md).
+- New environment variables must be added to **all three** of `.env.example`, `deploy/.env.template`, and the "Required" / "Optional" tables in [ADMIN.md](ADMIN.md). `bin/check-env-sync.php` enforces parity between the first two in CI; ADMIN.md is reviewer-checked.
+- New schema changes must go through `Database::migrate()` as additive `CREATE TABLE IF NOT EXISTS` / pragma-probed `ALTER TABLE ADD COLUMN` statements. `RENAME COLUMN` and `DROP COLUMN` are unsupported on the SQLite 3.7.17 prod floor — reshape via a table rebuild if you need them.
 
 ## Release expectations
 

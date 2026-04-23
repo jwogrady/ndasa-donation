@@ -66,13 +66,15 @@ The application reads configuration exclusively from environment variables, load
 | Variable | Purpose |
 |---|---|
 | `APP_URL` | Public origin of the donation app, including any subpath (e.g. `https://ndasafoundation.org/donation`). Used to build Stripe return URLs; the router strips this prefix from incoming paths automatically. |
-| `STRIPE_SECRET_KEY` | Stripe API secret (`sk_live_...` in production, `sk_test_...` for testing). |
-| `STRIPE_WEBHOOK_SECRET` | The `whsec_...` signing secret for the webhook endpoint. See Webhook setup below. |
 | `DB_PATH` | Absolute path to the SQLite file. Must be outside the web root and writable by the PHP-FPM user. |
 | `MAIL_FROM` | Address that staff notifications are sent from. |
 | `MAIL_BCC_INTERNAL` | Address that receives a notification for each completed donation. |
 
-### SMTP &mdash; required, one of these two forms
+Plus at least one Stripe key/webhook pair for the currently active mode (see **Stripe configuration** below).
+
+### SMTP &mdash; optional; falls back to local sendmail if absent
+
+If neither `SMTP_DSN` nor `SMTP_HOST` is set, the mailer uses Symfony's `sendmail://default` transport (the same path PHP's native `mail()` uses), which routes through the local MTA. On managed hosts with a working local MTA (Nexcess, most cPanel) that is deliverable without further setup. Set SMTP env vars only when you want to route through a specific relay.
 
 Either set the discrete components:
 
@@ -88,7 +90,7 @@ Or a pre-formed DSN that overrides the components:
 
 | `SMTP_DSN` | `smtp://user:URL_ENCODED_PASS@host:587` or Symfony Mailer provider DSN (`sendgrid+api://KEY@default`, `ses+api://…`) |
 
-Component form is preferred because the password does not need URL-encoding.
+Component form is preferred over `SMTP_DSN` because the password does not need URL-encoding.
 
 ### Admin panel &mdash; required, always
 
@@ -110,7 +112,7 @@ Component form is preferred because the password does not need URL-encoding.
 | `TRUSTED_PROXIES` | empty | Comma-separated CIDRs / IPs of reverse proxies whose `X-Forwarded-For` header may be trusted. Leave empty if the app is directly connected. **Never** use a wildcard. |
 | `MAIL_FROM_NAME` | `NDASA Foundation` | Display name on outgoing staff notifications. |
 
-The bootstrap aborts with a 500 at startup if any **Required** variable is missing or empty. For SMTP, at least one of `SMTP_HOST` or `SMTP_DSN` must be set. Missing `ADMIN_USER` or `ADMIN_PASS` does not abort startup but does take the admin panel offline.
+The bootstrap aborts with a 500 at startup if any **Required** variable is missing or empty, or if the credentials for the currently active Stripe mode are absent. SMTP has no required form — the mailer defaults to local `sendmail://default` when nothing is configured. Missing `ADMIN_USER` or `ADMIN_PASS` does not abort startup but does take the admin panel offline.
 
 ### File permissions
 
@@ -140,18 +142,21 @@ Every mode change writes an audit line to `storage/logs/app.log` in the form `st
 
 ### Webhook endpoint
 
-In the Stripe dashboard &rarr; **Developers** &rarr; **Webhooks** &rarr; **Add endpoint**:
+In the Stripe dashboard &rarr; **Developers** &rarr; **Webhooks** &rarr; **Add endpoint** (one endpoint per mode — live and test each need their own):
 
 - **URL:** `<APP_URL>/webhook.php` (for example, `https://ndasafoundation.org/donation/webhook.php`)
 - **API version:** match the pin in [config/app.php](../config/app.php). The current pin is `2026-03-25.dahlia`. Keep them aligned; reviewing this pin before upgrading is a deliberate step.
-- **Events:**
+- **Events** (all eight are required — subscription events are needed even if you are not recurring-enabled yet, because the handler is a no-op when they do not apply):
   - `checkout.session.completed`
   - `checkout.session.async_payment_succeeded`
   - `checkout.session.async_payment_failed`
   - `charge.refunded`
   - `payment_intent.payment_failed`
+  - `invoice.paid`
+  - `invoice.payment_failed`
+  - `customer.subscription.deleted`
 
-Copy the generated `whsec_...` secret into `STRIPE_WEBHOOK_SECRET` in `.env`.
+Copy the generated `whsec_...` secret into `STRIPE_LIVE_WEBHOOK_SECRET` (or `STRIPE_TEST_WEBHOOK_SECRET` for the test-mode endpoint) in `.env`.
 
 ### Payment methods
 
@@ -182,11 +187,14 @@ The Stripe webhook is the system of record for every donation. The browser-facin
 
 For each Stripe event, the application:
 
-1. Verifies the `Stripe-Signature` header with a 300-second tolerance. Replays outside the window are rejected with a 400.
-2. Inserts the event ID into `stripe_events` using `INSERT OR IGNORE` and checks the row count. Duplicate deliveries are acknowledged without re-processing.
-3. For `checkout.session.completed` with `payment_status = paid`, records a row in the donations ledger and sends the staff notification. For sessions that arrive unpaid (e.g. ACH), `checkout.session.async_payment_succeeded` does the same later.
-4. For `charge.refunded`, updates the corresponding donation's status and sets `refunded_at`.
-5. For `checkout.session.async_payment_failed` or `payment_intent.payment_failed`, logs and takes no further action.
+1. Verifies the `Stripe-Signature` header with a 300-second tolerance. The signature is checked against **both** configured secrets (live and test) in order, so retries that cross a mode toggle still validate. Replays outside the 300 s tolerance are rejected with a 400.
+2. Checks `stripe_events` for the event ID. If already recorded, returns 200 immediately (idempotent ack). If not, runs the handler first and only then inserts into `stripe_events` — a transient handler failure returns 500 so Stripe retries instead of silently deduping a failed event.
+3. For `checkout.session.completed` with `payment_status = paid` (and no `subscription`), records a row in the donations ledger tagged with `livemode` from the event, and sends the staff notification. For sessions that arrive unpaid (ACH etc.), `checkout.session.async_payment_succeeded` does the same later.
+4. For `charge.refunded`, flips the matching donation's status to `refunded` and sets `refunded_at`.
+5. For `invoice.paid` (subscription charge), writes a row keyed by `inv_<invoice_id>`. The first invoice of a new subscription is deduped against the signup `checkout.session.completed` via the subscription's `metadata.order_id`.
+6. For `invoice.payment_failed`, logs the decline; Stripe's own dunning drives retries.
+7. For `customer.subscription.deleted`, marks any still-pending rows tied to that subscription as cancelled (paid rows are untouched).
+8. For `checkout.session.async_payment_failed` or `payment_intent.payment_failed`, logs and takes no further action.
 
 ## Rate limiting
 
@@ -196,38 +204,75 @@ The "per-IP" identifier is resolved through `ClientIp`, which trusts `X-Forwarde
 
 ## Storage and reconciliation
 
-The application uses a single SQLite database at `DB_PATH`. On first connect the schema is created automatically with four tables plus two indexes:
+The application uses a single SQLite database at `DB_PATH`. On first connect the schema is created automatically; subsequent upgrades extend it via idempotent `ALTER TABLE ADD COLUMN` probes (SQLite 3.7.17-safe, no `RENAME COLUMN` or `DROP COLUMN`).
 
-- **`donations`** &mdash; one row per completed donation. Keyed by `order_id` (PK) and `payment_intent_id` (UNIQUE). Fields: amount in cents, currency, donor email and name, status (`paid` or `refunded`), created timestamp, optional refunded timestamp.
-- **`stripe_events`** &mdash; idempotency log keyed by Stripe event ID. Fields: event type, received timestamp.
+Tables:
+
+- **`donations`** &mdash; one row per completed donation (or recurring invoice). Keyed by `order_id` (PK) and `payment_intent_id` (UNIQUE). Fields: `amount_cents`, `currency`, `email`, `contact_name`, `status` (`paid` / `refunded` / `cancelled`), `created_at`, optional `refunded_at`, `dedication`, `email_optin` (1/0/null), `interval` (`month`/`year`/null), `stripe_subscription_id`, `stripe_customer_id`, `livemode` (1 live / 0 test).
+- **`stripe_events`** &mdash; idempotency + heartbeat log keyed by Stripe event ID. Fields: `type`, `received_at`. The admin dashboard uses `MAX(received_at)` as the "Last Webhook" heartbeat tile.
 - **`rate_limit`** &mdash; fixed-window counters keyed by `"checkout:<ip>"`.
-- **`page_views`** &mdash; one row per GET to the donation page (throttled, see Metrics below). Fields: id, created timestamp.
-- **Indexes** &mdash; `idx_donations_created_at` and `idx_page_views_created_at` accelerate the dashboard's ORDER BY / LIMIT queries.
+- **`page_views`** &mdash; one row per GET to the donation page (throttled, see Metrics below). Fields: `id`, `created_at`.
+- **`admin_audit`** &mdash; append-only log of privileged admin actions. Fields: `actor`, `action`, `detail`, `created_at`. Config saves log changed-key names only; secret values are never written here.
+- **`app_config`** &mdash; runtime flags that need to flip without a PHP-FPM reload. Today holds the live/test Stripe mode toggle (`stripe_mode`).
 
-For reconciliation, compare the local `donations` table against Stripe's own dashboard or a Stripe report. Any live Stripe charge without a corresponding local row is a processing miss and should be investigated (usually a webhook delivery failure).
+Indexes: `idx_donations_created_at`, `idx_donations_status`, `idx_donations_subscription`, `idx_donations_livemode_created_at`, `idx_donations_livemode_status`, `idx_page_views_created_at`, `idx_admin_audit_created_at`.
+
+For reconciliation, compare the local `donations` table (filtered to `livemode = 1` for real-money only) against Stripe's own dashboard or a Stripe report. Any live Stripe charge without a corresponding local row is a processing miss; `bin/stripe-import.php` can backfill it (see **Backfill from Stripe** below).
 
 SQLite is configured with WAL journalling, enforced foreign keys, and a 5-second busy timeout. PDO uses real prepared statements (no string-concat SQL anywhere).
+
+### Backfill from Stripe
+
+`bin/stripe-import.php` reads the Stripe API directly (sessions, invoices, charges) and writes matching rows through the same `EventStore::recordDonation` path the webhook uses, so schemas cannot drift between the two. Typical recovery after a webhook outage:
+
+```sh
+cd /path/to/ndasa-donation
+php bin/stripe-import.php --mode=live --from=YYYY-MM-DD --dry-run --verbose   # preview
+php bin/stripe-import.php --mode=live --from=YYYY-MM-DD --yes                 # commit
+```
+
+The script is idempotent — re-running against the same window is a no-op. `--mode=live|test` is required (no default). `--from` and `--to` accept YYYY-MM-DD in `APP_TIMEZONE`. Foreign Stripe objects (WPForms sessions, non-subscription one-off invoices) are counted separately from inserts and skips. Refunds are applied only to charges whose `payment_intent_id` matches a local row.
 
 ## Admin panel
 
 The admin panel lives at `/admin`. All `/admin*` routes are gated by a single HTTP Basic Auth check that reads `ADMIN_USER` and `ADMIN_PASS` from the environment. The gate supports both the standard `$_SERVER['PHP_AUTH_USER']` pair and the `HTTP_AUTHORIZATION` fallback (for FastCGI / LiteSpeed setups that strip `PHP_AUTH_*`). Credentials are compared in constant time.
 
-There are two pages:
+Top-level pages (all filter by the admin's active Stripe mode, except page-view counts which are traffic-level and unfiltered):
 
-- **`/admin`** &mdash; dashboard with stat cards, a 10-row recent-donations table, and a grouped System Health panel.
-- **`/admin/config`** &mdash; form that edits the four most-operationally-relevant env vars (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `APP_URL`, `MAIL_BCC_INTERNAL`). Saves are CSRF-protected and written atomically: values are validated, written to `.env.tmp`, then `rename()`d onto `.env` so a mid-write crash cannot leave a truncated file that bricks the fail-closed bootstrap.
+- **`/admin`** — Dashboard. Four scalar stats (Total Donations, Total Donors, Page Views, Conversion Rate), a pulse row with Last Webhook heartbeat / Active Recurring commitment / 30-day sparkline / 30-day refund rate, a repeat-donors table when any donor has more than one paid gift, a 10-row Recent Donations table, the Admin Activity log, and a grouped System Health panel.
+- **`/admin/transactions`** — Paginated transactions index. Filters: email substring, status (paid/refunded/cancelled/any), date range (from/to). Page-size dropdown: 25 / 50 / 100 / 500. Rows link to the per-donation detail page.
+- **`/admin/subscriptions`** — Paginated subscriptions index, one row per `stripe_subscription_id` with derived status from the most recent invoice.
+- **`/admin/subscriptions/{sub_id}`** — Subscription detail. Calls `Stripe\Subscription::retrieve()` for authoritative live status (current period, `cancel_at`, `cancel_at_period_end`), lists every invoice row linked to that subscription.
+- **`/admin/donors`** — Paginated donors index, one row per unique lowercased email with lifetime giving, first-gift date, last-gift date.
+- **`/admin/donors/{sha256(email)}`** — Donor detail. Identity header (name + mailto + opt-in state + lifetime total), any subscriptions with links to their detail page, every donation with a Stripe hosted-receipt URL fetched lazily from the Charge. Donor URLs use SHA-256 so email identifiers do not land in access logs or browser history.
+- **`/admin/donations/{order_id}`** — Donation detail with mode-aware Stripe dashboard deep links for the PaymentIntent and Subscription.
+- **`/admin/export`** — CSV export with optional `from` / `to` (YYYY-MM-DD). Filename embeds `-live-` or `-test-` so a test-mode export can never be mistaken for live accounting after download. Streams `text/csv`.
+- **`/admin/config`** — Atomic `.env` config editor covering the operationally-relevant env vars (Stripe keys and webhook secrets for both modes, `APP_URL`, `MAIL_*`, `SMTP_*`, `DONATION_MIN_CENTS` / `MAX_CENTS`, `APP_TIMEZONE`, `SESSION_NAME`). CSRF-protected. Values are validated per-field, written to `.env.tmp`, then `rename()`d onto `.env` so a mid-write crash cannot leave a truncated file that bricks the fail-closed bootstrap.
 
-**Restart caveat.** The admin form updates `.env` on disk, but the running PHP-FPM workers have already loaded the old values into `$_ENV` at request-start and will continue to use them. A PHP-FPM reload (or a `touch` on an `.user.ini` where the platform supports that trigger) is required for new values to take effect. The admin panel flashes "A PHP-FPM reload may be required for changes to take effect" after every save as a reminder.
+**Restart caveat.** The admin form updates `.env` on disk, but the running PHP-FPM workers have already loaded the old values into `$_ENV` at request-start and will continue to use them for bootstrap-driven settings. A PHP-FPM reload is required for new Stripe keys, timezone, or CSP-affecting values to take effect. The live/test mode toggle is an exception — it lives in the `app_config` SQLite table and flips on the very next request, no reload needed.
 
 ## Metrics
 
-The dashboard shows four numbers and a table, all sourced from the local SQLite ledger.
+All dashboard numbers are sourced from the local SQLite ledger. Except where noted, every metric filters by `livemode` against the admin's currently active Stripe mode, so flipping the toggle swaps the view without mingling test runs with real revenue.
 
-- **Page views** &mdash; count of rows in `page_views`. Each GET to `/` inserts one row, **throttled to at most one record per 30 seconds per session**. A refresh-happy donor or a bot with a cookie jar cannot inflate the count, but a new session on every request (no-cookie clients, unrelated browsers) will still count multiple views.
-- **Total Donations** &mdash; sum of `amount_cents` for rows with `status = 'paid'`. Refunded, pending, and failed rows are excluded so the dashboard shows actual revenue.
-- **Total Donors** &mdash; count of distinct lowercase `email` values among paid donations.
+Scalar stats:
+
+- **Page views** &mdash; count of rows in `page_views`. Each GET to `/` inserts one row, **throttled to at most one record per 30 seconds per session**. Not filtered by Stripe mode — it is a traffic metric independent of payment mode.
+- **Total Donations** &mdash; sum of `amount_cents` for rows with `status = 'paid'` in the current mode. Refunded, pending, and failed rows are excluded.
+- **Total Donors** &mdash; count of distinct lowercase `email` values among paid donations in the current mode.
 - **Conversion Rate** &mdash; `paid-donation-count / page-views * 100`, rounded to one decimal place. Zero page views yields 0%.
-- **Recent Donations** &mdash; the ten most recent rows from `donations`, all statuses included. The status column is the place operators see refund activity.
+
+Pulse tiles:
+
+- **Last Webhook** &mdash; `MAX(received_at)` from `stripe_events`, unfiltered (webhook ingest is pipeline health, not a mode signal). Age-bucketed: green <1 h, amber <1 d, red >1 d, grey never.
+- **Active Recurring** &mdash; sum of the most-recent invoice amount per active subscription, normalized to a monthly number (yearly plans divide by 12). Active = most-recent row's status is `paid`.
+- **Last 30 Days** &mdash; inline-SVG polyline of daily donation totals for the last 30 calendar days in `APP_TIMEZONE`, with zero-day backfill so the line is continuous.
+- **Refund Rate (30d)** &mdash; `COUNT(refunded_at in window) / COUNT(created_at in window) * 100`. Ok < 2%, warn 2–5%, bad ≥ 5%.
+
+Tables:
+
+- **Repeat Donors** (rendered only when at least one donor has >1 paid gift) &mdash; top 10 by lifetime giving. Links to the donor detail page.
+- **Recent Donations** &mdash; the ten most recent rows from `donations`, all statuses included. The status column is where operators see refund activity. Each row links to the per-donation detail page.
 
 Each aggregate is memoised per request, so the full dashboard render produces at most one query per distinct aggregate.
 
@@ -245,12 +290,12 @@ Every probe is wrapped in a try/catch; a broken check reports FAIL with a human-
 
 - **Page-view counts are approximate.** The 30-second session throttle eliminates refresh inflation but does not filter bots that reject cookies (each request looks like a fresh session), nor bots that spoof unique sessions for every request. Treat the page-view figure as directional.
 - **No bot filtering** beyond the session throttle. There is no user-agent allowlist, no CAPTCHA, no third-party bot-detection service integrated. Stripe Radar handles the actual fraud side.
-- **No Stripe analytics sync.** The dashboard reads the local DB only. Metrics in the admin panel and in the Stripe dashboard can drift if a webhook delivery was dropped and never retried successfully. Periodic reconciliation against a Stripe report is the mitigation.
-- **Admin config changes are not live until PHP-FPM reloads.** The editor rewrites `.env` atomically but cannot force the running workers to re-read it.
+- **No Stripe analytics sync.** The dashboard reads the local DB only. Metrics in the admin panel and in the Stripe dashboard can drift if a webhook delivery was dropped and never retried successfully. `bin/stripe-import.php` (see **Backfill from Stripe** above) is the repair tool; the Last Webhook heartbeat on the dashboard is the early-warning signal.
+- **Admin config changes are not live until PHP-FPM reloads** for bootstrap-driven settings (Stripe keys, timezone, CSP). The live/test Stripe mode toggle is the exception — it flips on the next request with no reload.
 - **SQLite-backed rate limiter** is adequate for a single-host deployment. Multi-host or CDN-fronted deployments need a shared backend.
 - **Staff notification failures** are logged and swallowed; an SMTP outage during a donation surge silently drops notifications for the outage window (donations themselves are still recorded).
 - **Single-tenant.** Scoped to the NDASA Foundation; multi-tenant support is not in the current design.
-- **Recurring donations (subscriptions)** are out of scope.
+- **Donor identity is the email address.** Case-insensitive equality is the de-dupe rule. A donor who gives from two different email addresses appears as two separate donors.
 
 Direct shell access to the ledger, when needed:
 
@@ -311,22 +356,48 @@ Adding a new endpoint with the new secret, waiting one Stripe retry window, and 
 
 To deploy a new version of the application:
 
-1. Pull or rsync the new code into place (or, for Nexcess, re-run `./deploy/install.sh`, which backs up the current install and replaces it).
+1. Pull or rsync the new code into place (or, for Nexcess, re-run `./deploy/install.sh` from an updated repo checkout; it performs a timestamped backup, rescues `.env` and `storage/`, and restores them into the fresh install).
 2. Run `composer install --no-dev --optimize-autoloader`.
 3. If the Stripe API version pin has changed, update the endpoint in the Stripe dashboard to match before cutting over.
 4. Reload PHP-FPM to pick up any opcache changes.
 5. Smoke-test with a test-mode donation before declaring the deploy complete.
 
-`.env`, the SQLite database, and the log directory are never overwritten by deploys.
+`.env`, the SQLite database, WAL/SHM journals, and `storage/logs/` are rescued before the old install is renamed and restored into the fresh install. A staged `storage.safety-copy/` inside the backup dir also survives mid-install failure; it is removed only after the restore confirms a non-empty `donations.sqlite` in the new install.
 
 ## Rollback
 
 If a deploy goes wrong:
 
-1. Restore the previous code tree (the Nexcess install script keeps a `.bak-YYYYMMDD-HHMMSS` backup; a direct deploy is a `git checkout` of the previous tag).
-2. Run `composer install --no-dev --optimize-autoloader` against the restored tree.
-3. Reload PHP-FPM.
-4. Inspect `storage/logs/app.log` for any entries that correspond to the failed deploy window.
+1. Identify the newest snapshot in `~/backups/ndasa-donation/` (or your `BACKUP_ROOT`), named `.ndasa-donation.bak-YYYYMMDD-HHMMSS` and `donation.bak-YYYYMMDD-HHMMSS`.
+2. Move them back into place:
+   ```sh
+   mv ~/public_html/.ndasa-donation                  ~/backups/ndasa-donation/.ndasa-donation.bad
+   mv ~/backups/ndasa-donation/.ndasa-donation.bak-<TAG>  ~/public_html/.ndasa-donation
+   mv ~/public_html/donation                         ~/backups/ndasa-donation/donation.bad
+   mv ~/backups/ndasa-donation/donation.bak-<TAG>         ~/public_html/donation
+   ```
+3. Run `composer install --no-dev --optimize-autoloader` against the restored tree if composer.lock differs.
+4. Reload PHP-FPM.
+5. Inspect `storage/logs/app.log` for any entries that correspond to the failed deploy window.
+
+If the failed install aborted mid-rescue and printed a `storage.safety-copy` path, copy its contents into `~/public_html/.ndasa-donation/storage/` to restore runtime data.
 
 No database migration is required for rollbacks; the schema is append-only across releases.
+
+## Backup hygiene
+
+Every `install.sh` run leaves a timestamped backup pair in `~/backups/ndasa-donation/` (overridable via `BACKUP_ROOT`). Prune old ones with `deploy/prune-backups.sh`:
+
+```sh
+~/public_html/.ndasa-donation/deploy/prune-backups.sh                           # dry-run, keep 3 per series
+~/public_html/.ndasa-donation/deploy/prune-backups.sh --keep 5 --older-than 14 --execute
+```
+
+The script retains each series independently (`.ndasa-donation.bak-*` and `donation.bak-*` counted separately), refuses to touch anything whose name doesn't match the strict `YYYYMMDD-HHMMSS` timestamp pattern, and double-checks the parent directory immediately before every `rm -rf`. See `deploy/prune-backups.sh --help` for the full option list.
+
+For a one-time sweep of legacy snapshots that older installer versions placed directly under `public_html/`, point `BACKUP_ROOT` at that directory:
+
+```sh
+BACKUP_ROOT=$HOME/public_html ~/public_html/.ndasa-donation/deploy/prune-backups.sh --keep 0 --execute
+```
 
