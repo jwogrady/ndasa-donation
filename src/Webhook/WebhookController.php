@@ -110,10 +110,9 @@ final class WebhookController
         $email           = (string) (($session->customer_details->email ?? null)
                                   ?? ($session->customer_email ?? ''));
         $name            = (string) ($session->customer_details->name ?? '');
-        // Checkout sessions don't themselves carry the payment_intent metadata,
-        // but they do carry their own metadata object when set. We set
-        // dedication on the PaymentIntent, not the session, so retrieve the
-        // session with its metadata expanded. Safe to fall back to empty.
+        // DonationService writes dedication into the Checkout session's
+        // metadata object at create-time; Stripe delivers it back on the
+        // completed event. Absent = no dedication.
         $dedication = (string) ($session->metadata->dedication ?? '');
         // email_optin is stored as '1' / '0' string in Stripe metadata to
         // survive the JSON round-trip; absent = pre-optin-feature = unknown.

@@ -343,22 +343,21 @@ function admin_validate_field(string $key, string $value): ?string
 
 function render_admin_dashboard(?string $flashOk = null, ?string $flashErr = null): void
 {
-    // Some dashboards can still render even if the DB is unreachable — we
-    // want the health panel to say so rather than throwing a 500.
-    $metrics = null;
+    // The dashboard has to render even if the DB is unreachable so the
+    // health panel can explain the outage. Initialise every template var
+    // with a safe default before the metrics try/catch.
     $pageViews = $donationCount = $donorCount = $totalCents = 0;
     $conversionPct = 0.0;
     $recent = [];
-    $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
+    $stripeMode    = current_stripe_mode();
+    $lastWebhookAt = null;
+    $recurring     = ['subscriptions' => 0, 'monthly_cents' => 0];
+    $repeatDonors  = [];
+    $daily30       = [];
+    $refundRate    = ['donations' => 0, 'refunded' => 0, 'rate_pct' => 0.0];
 
-    $lastWebhookAt       = null;
-    $recurring           = ['subscriptions' => 0, 'monthly_cents' => 0];
-    $repeatDonors        = [];
-    $daily30             = [];
-    $refundRate          = ['donations' => 0, 'refunded' => 0, 'rate_pct' => 0.0];
     try {
-        $db = Database::connection();
-        $metrics = new AdminMetrics($db, $stripeMode === AppConfig::MODE_LIVE);
+        $metrics = admin_metrics();
         $pageViews     = $metrics->pageViewCount();
         $donationCount = $metrics->donationCount();
         $donorCount    = $metrics->donorCount();
@@ -675,11 +674,10 @@ function handle_admin_export(): void
         return;
     }
 
-    $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
-    $isLive = $stripeMode === AppConfig::MODE_LIVE;
+    $isLive = current_stripe_mode_is_live();
 
     try {
-        $rows = (new AdminMetrics(Database::connection(), $isLive))->donationsInRange($fromTs, $toTs);
+        $rows = admin_metrics()->donationsInRange($fromTs, $toTs);
     } catch (\Throwable $e) {
         error_log('CSV export failed: ' . $e->getMessage());
         http_response_code(500);
@@ -740,11 +738,10 @@ function render_admin_donation(string $orderId): void
         return;
     }
 
-    $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
+    $stripeMode = current_stripe_mode();
 
     try {
-        $donation = (new AdminMetrics(Database::connection(), $stripeMode === AppConfig::MODE_LIVE))
-            ->findDonation($orderId);
+        $donation = admin_metrics()->findDonation($orderId);
     } catch (\Throwable $e) {
         error_log('Donation detail lookup failed: ' . $e->getMessage());
         http_response_code(500);
@@ -771,7 +768,16 @@ function admin_page_size(): int
     return in_array($raw, [25, 50, 100, 500], true) ? $raw : 25;
 }
 
-/** Parse YYYY-MM-DD from $_GET or return null. Silent on malformed input. */
+/** 1-based current page from `?page=N`, clamped to a sane minimum of 1. */
+function admin_current_page(): int
+{
+    return max(1, (int) ($_GET['page'] ?? 1));
+}
+
+/**
+ * Parse YYYY-MM-DD from $_GET, returning a Unix timestamp at 00:00 in the
+ * configured app timezone, or null if the input is missing or malformed.
+ */
 function admin_parse_date(string $key): ?int
 {
     $raw = (string) ($_GET[$key] ?? '');
@@ -786,41 +792,72 @@ function admin_parse_date(string $key): ?int
     }
 }
 
+/**
+ * Like {@see admin_parse_date} but for the inclusive-to side of a date
+ * range: returns the timestamp of the day *after* the parsed date so the
+ * SQL query can do `created_at < :to` and still include the selected day.
+ */
+function admin_parse_date_to_inclusive(string $key): ?int
+{
+    if (admin_parse_date($key) === null) {
+        return null;
+    }
+    try {
+        $tz  = new \DateTimeZone($_ENV['APP_TIMEZONE'] ?? 'UTC');
+        $raw = (string) ($_GET[$key] ?? '');
+        return (new \DateTimeImmutable($raw . ' 00:00:00', $tz))
+            ->modify('+1 day')
+            ->getTimestamp();
+    } catch (\Throwable) {
+        return null;
+    }
+}
+
+/**
+ * The admin's currently active Stripe mode as a plain string: `'live'` or
+ * `'test'`. Templates that deep-link into the Stripe dashboard consume
+ * this directly.
+ */
+function current_stripe_mode(): string
+{
+    return defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
+}
+
+/** True when the admin's currently active Stripe mode is "live". */
+function current_stripe_mode_is_live(): bool
+{
+    return current_stripe_mode() === AppConfig::MODE_LIVE;
+}
+
+/** Convenience factory: a Metrics instance wired to the active Stripe mode. */
+function admin_metrics(): AdminMetrics
+{
+    return new AdminMetrics(Database::connection(), current_stripe_mode_is_live());
+}
+
 function render_admin_transactions(): void
 {
-    $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
+    $stripeMode = current_stripe_mode();
     $perPage = admin_page_size();
-    $page    = max(1, (int) ($_GET['page'] ?? 1));
+    $page    = admin_current_page();
     $offset  = ($page - 1) * $perPage;
 
     $emailQ  = trim((string) ($_GET['email']  ?? ''));
     $status  = (string) ($_GET['status'] ?? '');
     $fromRaw = (string) ($_GET['from']  ?? '');
     $toRaw   = (string) ($_GET['to']    ?? '');
-    $fromTs  = admin_parse_date('from');
-    // Inclusive-to by adding a day; null if unparseable.
-    $toTs = null;
-    if ($toRaw !== '' && admin_parse_date('to') !== null) {
-        try {
-            $tz = new \DateTimeZone($_ENV['APP_TIMEZONE'] ?? 'UTC');
-            $toTs = (new \DateTimeImmutable($toRaw . ' 00:00:00', $tz))
-                ->modify('+1 day')->getTimestamp();
-        } catch (\Throwable) {
-            $toTs = null;
-        }
-    }
 
     $filters = [
         'email'   => $emailQ,
         'status'  => $status,
-        'from_ts' => $fromTs,
-        'to_ts'   => $toTs,
+        'from_ts' => admin_parse_date('from'),
+        'to_ts'   => admin_parse_date_to_inclusive('to'),
         'limit'   => $perPage,
         'offset'  => $offset,
     ];
 
     try {
-        $metrics = new AdminMetrics(Database::connection(), $stripeMode === AppConfig::MODE_LIVE);
+        $metrics = admin_metrics();
         $rows  = $metrics->listTransactions($filters);
         $total = $metrics->countTransactions($filters);
     } catch (\Throwable $e) {
@@ -836,13 +873,13 @@ function render_admin_transactions(): void
 
 function render_admin_subscriptions(): void
 {
-    $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
+    $stripeMode = current_stripe_mode();
     $perPage = admin_page_size();
-    $page    = max(1, (int) ($_GET['page'] ?? 1));
+    $page    = admin_current_page();
     $offset  = ($page - 1) * $perPage;
 
     try {
-        $metrics = new AdminMetrics(Database::connection(), $stripeMode === AppConfig::MODE_LIVE);
+        $metrics = admin_metrics();
         $rows  = $metrics->listSubscriptions($perPage, $offset);
         $total = $metrics->countSubscriptions();
     } catch (\Throwable $e) {
@@ -863,11 +900,10 @@ function render_admin_subscription(string $subId): void
         not_found();
         return;
     }
-    $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
+    $stripeMode = current_stripe_mode();
 
     try {
-        $metrics  = new AdminMetrics(Database::connection(), $stripeMode === AppConfig::MODE_LIVE);
-        $invoices = $metrics->subscriptionInvoices($subId);
+        $invoices = admin_metrics()->subscriptionInvoices($subId);
     } catch (\Throwable $e) {
         error_log('Subscription detail lookup failed: ' . $e->getMessage());
         http_response_code(500);
@@ -880,8 +916,8 @@ function render_admin_subscription(string $subId): void
         return;
     }
 
-    // Live status from Stripe — one API call, authoritative. If Stripe is
-    // unreachable the page still renders with a "status unknown" hint.
+    // Live status from Stripe. If unreachable, the page still renders and
+    // the template shows a "status unknown" hint.
     $liveStatus  = null;
     $liveDetails = null;
     try {
@@ -903,13 +939,13 @@ function render_admin_subscription(string $subId): void
 
 function render_admin_donors(): void
 {
-    $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
+    $stripeMode = current_stripe_mode();
     $perPage = admin_page_size();
-    $page    = max(1, (int) ($_GET['page'] ?? 1));
+    $page    = admin_current_page();
     $offset  = ($page - 1) * $perPage;
 
     try {
-        $metrics = new AdminMetrics(Database::connection(), $stripeMode === AppConfig::MODE_LIVE);
+        $metrics = admin_metrics();
         $rows  = $metrics->listDonors($perPage, $offset);
         $total = $metrics->countDonors();
     } catch (\Throwable $e) {
@@ -931,11 +967,10 @@ function render_admin_donor(string $emailHash): void
         not_found();
         return;
     }
-    $stripeMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : AppConfig::MODE_LIVE;
+    $stripeMode = current_stripe_mode();
 
     try {
-        $donor = (new AdminMetrics(Database::connection(), $stripeMode === AppConfig::MODE_LIVE))
-            ->findDonorByEmailHash($emailHash);
+        $donor = admin_metrics()->findDonorByEmailHash($emailHash);
     } catch (\Throwable $e) {
         error_log('Donor detail lookup failed: ' . $e->getMessage());
         http_response_code(500);
@@ -948,28 +983,44 @@ function render_admin_donor(string $emailHash): void
         return;
     }
 
-    // Build Stripe receipt URLs by looking up each donation's Charge via
-    // its PaymentIntent. One API call per donation; acceptable on a single
-    // donor page (worst case a handful of calls). Cache within the request.
-    $receiptUrls = [];
-    foreach ($donor['donations'] as $d) {
+    $receiptUrls = resolve_stripe_receipt_urls($donor['donations']);
+
+    $appVersion = AdminVersion::current();
+    require __DIR__ . '/../templates/admin/donor.php';
+}
+
+/**
+ * For each donation that has a PaymentIntent id, ask Stripe for the hosted
+ * receipt URL on the latest charge. One API call per PI; acceptable on a
+ * per-donor detail page where the count is small.
+ *
+ * Lookups are independent — a single failure logs and is skipped; others
+ * still populate. Returns a map of PI id → receipt URL.
+ *
+ * @param  list<array<string,mixed>> $donations
+ * @return array<string,string>
+ */
+function resolve_stripe_receipt_urls(array $donations): array
+{
+    $out = [];
+    foreach ($donations as $d) {
         $pi = $d['payment_intent_id'] ?? null;
-        if ($pi === null) { continue; }
+        if (!is_string($pi) || $pi === '') {
+            continue;
+        }
         try {
             $intent = \Stripe\PaymentIntent::retrieve([
                 'id'     => $pi,
                 'expand' => ['latest_charge'],
             ]);
             $charge = $intent->latest_charge ?? null;
-            if ($charge !== null && isset($charge->receipt_url) && $charge->receipt_url !== '') {
-                $receiptUrls[$pi] = (string) $charge->receipt_url;
+            $url    = $charge !== null ? (string) ($charge->receipt_url ?? '') : '';
+            if ($url !== '') {
+                $out[$pi] = $url;
             }
         } catch (\Throwable $e) {
-            // Silent — the detail page still renders without that link.
             error_log('Stripe receipt lookup failed for PI ' . $pi . ': ' . $e->getMessage());
         }
     }
-
-    $appVersion = AdminVersion::current();
-    require __DIR__ . '/../templates/admin/donor.php';
+    return $out;
 }
