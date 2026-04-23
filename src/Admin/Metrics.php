@@ -267,8 +267,22 @@ final class Metrics
         $end   = (new \DateTimeImmutable('today', $tz))->modify('+1 day'); // exclusive
         $start = $end->modify("-{$days} day");
 
+        // Bucket keys must use the same timezone the PHP side walks below,
+        // NOT SQLite's `'localtime'` modifier (which is the server's system
+        // tz — typically UTC on managed hosts, producing off-by-one-day keys
+        // against APP_TIMEZONE). Pass an explicit signed offset like
+        // "-04:00" so SQLite's date() math lines up with DateTimeImmutable
+        // in APP_TIMEZONE.
+        //
+        // Use the offset as of `now` — DST transitions inside the window
+        // would shift some bucket boundaries, but for a 30-day dashboard
+        // sparkline the one-hour drift on spring-forward / fall-back days
+        // is acceptable. A future refinement could bucket per-row by each
+        // row's own offset; not worth the complexity today.
+        $tzOffset = (new \DateTimeImmutable('now', $tz))->format('P');
+
         $stmt = $this->db->prepare(
-            "SELECT date(created_at, 'unixepoch', 'localtime') AS d,
+            "SELECT date(created_at, 'unixepoch', :tz_offset) AS d,
                     COUNT(*) AS n,
                     SUM(amount_cents) AS total
              FROM donations
@@ -277,8 +291,9 @@ final class Metrics
              GROUP BY d"
         );
         $this->bindLivemode($stmt);
-        $stmt->bindValue(':from', $start->getTimestamp(), PDO::PARAM_INT);
-        $stmt->bindValue(':to',   $end->getTimestamp(),   PDO::PARAM_INT);
+        $stmt->bindValue(':from',      $start->getTimestamp(), PDO::PARAM_INT);
+        $stmt->bindValue(':to',        $end->getTimestamp(),   PDO::PARAM_INT);
+        $stmt->bindValue(':tz_offset', $tzOffset,              PDO::PARAM_STR);
         $stmt->execute();
 
         $byDate = [];
