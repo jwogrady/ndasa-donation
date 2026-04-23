@@ -28,6 +28,12 @@ set -euo pipefail
 : "${APP_HIDDEN_NAME:=.ndasa-donation}"
 : "${PUBLIC_NAME:=donation}"
 : "${BACKUP_TAG:=$(date +%Y%m%d-%H%M%S)}"
+# Backups live OUTSIDE the webroot. Keeping them in public_html/ worked but
+# put copies of .env, the SQLite DB, and app source next to WordPress where
+# a misconfigured .htaccess or a stray indexer could expose them. ~/backups/
+# is on the same filesystem on every managed host we've seen, so mv is still
+# atomic and instant. Override with BACKUP_ROOT if your layout differs.
+: "${BACKUP_ROOT:=$HOME/backups/ndasa-donation}"
 
 HIDDEN_DIR="$WEBROOT/$APP_HIDDEN_NAME"
 PUBLIC_DIR="$WEBROOT/$PUBLIC_NAME"
@@ -60,6 +66,7 @@ blue "Web root:       $WEBROOT"
 blue "Hidden app dir: $HIDDEN_DIR"
 blue "Public dir:     $PUBLIC_DIR"
 blue "mu-plugins dir: $MU_DIR"
+blue "Backup root:    $BACKUP_ROOT"
 echo
 
 [[ -d "$REPO_DIR/src" && -f "$REPO_DIR/composer.json" ]] \
@@ -98,9 +105,13 @@ if [[ -e "$HIDDEN_DIR" || -e "$PUBLIC_DIR" ]]; then
     [[ -e "$HIDDEN_DIR" ]] && echo "    $HIDDEN_DIR exists"
     [[ -e "$PUBLIC_DIR" ]] && echo "    $PUBLIC_DIR exists"
     echo
-    echo "A backup tag will be appended before anything is overwritten:"
-    echo "    $HIDDEN_DIR  ->  ${HIDDEN_DIR}.bak-${BACKUP_TAG}"
-    echo "    $PUBLIC_DIR  ->  ${PUBLIC_DIR}.bak-${BACKUP_TAG}"
+    # Backup targets live in $BACKUP_ROOT (default ~/backups/ndasa-donation)
+    # so they don't clutter public_html or risk being served to the web.
+    BACKUP_HIDDEN_DIR="$BACKUP_ROOT/$APP_HIDDEN_NAME.bak-$BACKUP_TAG"
+    BACKUP_PUBLIC_DIR="$BACKUP_ROOT/$PUBLIC_NAME.bak-$BACKUP_TAG"
+    echo "A backup will be written to:"
+    echo "    $HIDDEN_DIR  ->  $BACKUP_HIDDEN_DIR"
+    echo "    $PUBLIC_DIR  ->  $BACKUP_PUBLIC_DIR"
     if [[ -f "$HIDDEN_DIR/.env" ]]; then
         echo
         green "The active .env will be preserved and restored into the new install."
@@ -146,9 +157,15 @@ if [[ -e "$HIDDEN_DIR" || -e "$PUBLIC_DIR" ]]; then
         green "Active storage/ rescued to $RESCUED_STORAGE"
     fi
 
-    [[ -e "$HIDDEN_DIR" ]] && mv "$HIDDEN_DIR" "${HIDDEN_DIR}.bak-${BACKUP_TAG}"
-    [[ -e "$PUBLIC_DIR" ]] && mv "$PUBLIC_DIR" "${PUBLIC_DIR}.bak-${BACKUP_TAG}"
-    green "Existing install backed up."
+    # Ensure the backup root exists and is private to the installing user.
+    # chmod 700 blocks other local accounts on shared hosts from reading
+    # old .env copies inside snapshot dirs.
+    mkdir -p "$BACKUP_ROOT"
+    chmod 700 "$BACKUP_ROOT"
+
+    [[ -e "$HIDDEN_DIR" ]] && mv "$HIDDEN_DIR" "$BACKUP_HIDDEN_DIR"
+    [[ -e "$PUBLIC_DIR" ]] && mv "$PUBLIC_DIR" "$BACKUP_PUBLIC_DIR"
+    green "Existing install backed up to $BACKUP_ROOT/"
 else
     confirm "No existing install found. Proceed with fresh install?" \
         || { yellow "Aborted."; exit 0; }
@@ -306,4 +323,7 @@ echo "  5. Make a real \$1 test donation in Stripe test mode and confirm"
 echo "     both the donor receipt (from Stripe) and the staff notification"
 echo "     (from ReceiptMailer) arrive."
 echo
-echo "To roll back: rename ${HIDDEN_DIR} and ${PUBLIC_DIR} to their .bak-* peers."
+echo "To roll back: move the newest snapshot pair from $BACKUP_ROOT/ back into"
+echo "place, e.g.:"
+echo "    mv $BACKUP_ROOT/$APP_HIDDEN_NAME.bak-<TAG> $HIDDEN_DIR"
+echo "    mv $BACKUP_ROOT/$PUBLIC_NAME.bak-<TAG>      $PUBLIC_DIR"
