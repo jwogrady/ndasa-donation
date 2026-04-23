@@ -137,20 +137,38 @@ if [[ -e "$HIDDEN_DIR" || -e "$PUBLIC_DIR" ]]; then
     fi
 
     # Rescue the live storage/ directory the same way. Move (not copy) so we
-    # don't duplicate multi-MB DB files. A secondary copy still exists in the
-    # post-move backup dir below, because the parent HIDDEN_DIR only gets mv'd
-    # AFTER this block — so when the parent is renamed to .bak-TAG, storage/
-    # is already out of the way and the .bak directory ends up without it.
-    # That's fine: the rescued copy is the authoritative preservation path.
+    # don't duplicate multi-MB DB files during the normal path.
+    #
+    # We also keep a belt-and-braces COPY of the same contents inside the
+    # .bak-TAG dir before the rename, so a mid-install failure (composer,
+    # rsync, etc.) that triggers the EXIT trap and wipes the rescue tempdir
+    # still leaves one readable copy on disk in $BACKUP_ROOT. The copy is
+    # removed once the restore step confirms the live storage/ has content.
     RESCUED_STORAGE=""
+    STORAGE_SAFETY_COPY=""
     if [[ -d "$HIDDEN_DIR/storage" ]]; then
         RESCUED_STORAGE="$(mktemp -d -t ndasa-storage.XXXXXX)"
+
+        # Safety copy goes INSIDE what will become the .bak dir. cp -a
+        # preserves perms/timestamps and handles hidden files.
+        STORAGE_SAFETY_COPY="$HIDDEN_DIR/storage.safety-copy"
+        if cp -a "$HIDDEN_DIR/storage/." "$STORAGE_SAFETY_COPY/" 2>/dev/null; then
+            chmod -R go-rwx "$STORAGE_SAFETY_COPY" 2>/dev/null || true
+            green "Storage safety copy staged for backup dir."
+        else
+            # cp failure is non-fatal — worst case we fall back to the rescue
+            # tempdir behavior. But warn loudly so the operator knows.
+            STORAGE_SAFETY_COPY=""
+            yellow "Could not stage storage safety copy — continuing with tempdir rescue only."
+        fi
+
         # mv contents, not the directory itself, so mktemp's dir (mode 700) is reused.
         if compgen -G "$HIDDEN_DIR/storage/"* > /dev/null \
         || compgen -G "$HIDDEN_DIR/storage/".* > /dev/null; then
             # shellcheck disable=SC2086
             mv "$HIDDEN_DIR/storage/"* "$RESCUED_STORAGE/" 2>/dev/null || true
             # Hidden files (rare but possible, e.g. sqlite-wal/shm journals).
+            # Skip the safety-copy dir we just created — it's not real storage.
             find "$HIDDEN_DIR/storage/" -maxdepth 1 -mindepth 1 -name '.*' \
                 -exec mv {} "$RESCUED_STORAGE/" \; 2>/dev/null || true
         fi
@@ -172,12 +190,27 @@ else
 fi
 echo
 
-# Guarantee rescued artefacts are cleaned up no matter how we exit. The
-# restore step below empties RESCUED_STORAGE by move, so these are no-ops
-# on success and only matter on early-exit failure paths.
+# Guarantee rescued artefacts are cleaned up no matter how we exit. On
+# success, the restore step has already moved RESCUED_STORAGE contents
+# into the new install and removed the safety copy, so these are no-ops.
+# On early-exit failure, the tempdir gets cleaned BUT the safety copy
+# in the backup dir is preserved — operators can recover from it by
+# copying $BACKUP_HIDDEN_DIR/storage.safety-copy/* into the new install.
 cleanup_rescued() {
+    local rc=$?
     [[ -n "$RESCUED_ENV" && -f "$RESCUED_ENV" ]] && rm -f "$RESCUED_ENV"
     [[ -n "${RESCUED_STORAGE:-}" && -d "$RESCUED_STORAGE" ]] && rm -rf "$RESCUED_STORAGE"
+    if [[ $rc -ne 0 && -n "${STORAGE_SAFETY_COPY:-}" ]]; then
+        # Shift safety-copy to backup-dir path (after the mv of HIDDEN_DIR)
+        local safety="${BACKUP_HIDDEN_DIR:-$STORAGE_SAFETY_COPY}/storage.safety-copy"
+        [[ -d "$safety" ]] || safety="$STORAGE_SAFETY_COPY"
+        if [[ -d "$safety" ]]; then
+            red "Install aborted. Your data is preserved at:"
+            red "   $safety"
+            red "To recover after fixing the failure, copy its contents into"
+            red "   $HIDDEN_DIR/storage/"
+        fi
+    fi
 }
 trap cleanup_rescued EXIT
 
@@ -222,6 +255,24 @@ if [[ -n "${RESCUED_STORAGE:-}" && -d "$RESCUED_STORAGE" ]]; then
     fi
     # Ensure the tempdir is removed even if the trap runs later.
     rmdir "$RESCUED_STORAGE" 2>/dev/null || true
+fi
+
+# If the safety-copy inside the backup dir was created, the restore above
+# is now the live authoritative copy. Remove the safety copy from the
+# backup dir so we don't persist two copies of the DB indefinitely.
+# BACKUP_HIDDEN_DIR only exists when an install was actually replaced.
+if [[ -n "${BACKUP_HIDDEN_DIR:-}" && -d "$BACKUP_HIDDEN_DIR/storage.safety-copy" ]]; then
+    # Sanity check: only clean up if the live storage/ has at least one
+    # file that looks like our DB. If the restore somehow failed silently,
+    # we want the safety copy to survive so operators can recover by hand.
+    if [[ -f "$HIDDEN_DIR/storage/donations.sqlite" ]] \
+    && [[ -s "$HIDDEN_DIR/storage/donations.sqlite" ]]; then
+        rm -rf "$BACKUP_HIDDEN_DIR/storage.safety-copy"
+        STORAGE_SAFETY_COPY=""
+    else
+        yellow "Live storage/ looks empty after restore — keeping safety copy at"
+        yellow "   $BACKUP_HIDDEN_DIR/storage.safety-copy"
+    fi
 fi
 
 chmod 700 "$HIDDEN_DIR/storage" "$HIDDEN_DIR/storage/logs"
