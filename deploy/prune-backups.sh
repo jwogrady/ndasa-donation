@@ -109,7 +109,10 @@ candidates=()
 while IFS= read -r dir; do
     [[ -n "$dir" ]] && candidates+=("$dir")
 done < <(
-    find "$BACKUP_ROOT" -maxdepth 1 -type d \
+    # `find -L` follows symlinks at BACKUP_ROOT itself. Matters on Nexcess
+    # managed WP, where ~/public_html is a symlink into the chroot and
+    # find without -L returns zero entries silently.
+    find -L "$BACKUP_ROOT" -maxdepth 1 -type d \
         \( -name '.ndasa-donation.bak-*' -o -name 'donation.bak-*' \) \
         -regextype posix-extended \
         -regex '.*\.bak-[0-9]{8}-[0-9]{6}$'
