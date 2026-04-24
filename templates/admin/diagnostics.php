@@ -4,16 +4,16 @@
  * (the one write action the page hosts).
  *
  * @var array{
- *   app:        list<array{label:string,status:string,value:string,detail:?string}>,
- *   php:        list<array{label:string,status:string,value:string,detail:?string}>,
- *   database:   list<array{label:string,status:string,value:string,detail:?string}>,
- *   filesystem: list<array{label:string,status:string,value:string,detail:?string}>,
- *   logs:       list<array{label:string,status:string,value:string,detail:?string}>,
- *   env:        list<array{label:string,status:string,value:string,detail:?string}>,
- *   stripe_keys:list<array{label:string,status:string,value:string,detail:?string}>,
- *   stripe_api: list<array{label:string,status:string,value:string,detail:?string}>,
- *   heartbeat:  list<array{label:string,status:string,value:string,detail:?string}>,
- *   log_tail:   list<string>
+ *   app:         list<array{label:string,status:string,value:string,detail:?string}>,
+ *   php:         list<array{label:string,status:string,value:string,detail:?string}>,
+ *   database:    list<array{label:string,status:string,value:string,detail:?string}>,
+ *   filesystem:  list<array{label:string,status:string,value:string,detail:?string}>,
+ *   logs:        list<array{label:string,status:string,value:string,detail:?string}>,
+ *   env:         list<array{label:string,status:string,value:string,detail:?string}>,
+ *   stripe_live: list<array{label:string,status:string,value:string,detail:?string}>,
+ *   stripe_test: list<array{label:string,status:string,value:string,detail:?string}>,
+ *   legacy_keys: list<array{label:string,status:string,value:string,detail:?string}>,
+ *   log_tail:    list<string>
  * } $diagnostics
  * @var string  $appVersion
  * @var string  $stripeMode   'live' | 'test'
@@ -114,9 +114,7 @@ ob_start();
 
 <nav class="diag-anchors" aria-label="Jump to section">
   <a href="#diag-app">App</a>
-  <a href="#diag-stripe-api">Stripe API</a>
-  <a href="#diag-stripe-keys">Stripe keys</a>
-  <a href="#diag-webhook-heartbeat">Heartbeat</a>
+  <a href="#diag-stripe">Stripe (live &amp; test)</a>
   <a href="#diag-php">PHP</a>
   <a href="#diag-database">Database</a>
   <a href="#diag-filesystem">Filesystem</a>
@@ -124,15 +122,56 @@ ob_start();
   <a href="#diag-env-vars">Env</a>
 </nav>
 
-<?= $renderSection('App',               $diagnostics['app']) ?>
-<?= $renderSection('Stripe API',        $diagnostics['stripe_api']) ?>
-<?= $renderSection('Stripe keys',       $diagnostics['stripe_keys']) ?>
-<?= $renderSection('Webhook heartbeat', $diagnostics['heartbeat']) ?>
-<?= $renderSection('PHP',               $diagnostics['php']) ?>
-<?= $renderSection('Database',          $diagnostics['database']) ?>
-<?= $renderSection('Filesystem',        $diagnostics['filesystem']) ?>
-<?= $renderSection('Logs',              $diagnostics['logs']) ?>
-<?= $renderSection('Env vars',          $diagnostics['env']) ?>
+<?= $renderSection('App', $diagnostics['app']) ?>
+
+<section id="diag-stripe" class="diag-section" aria-labelledby="diag-stripe-heading">
+  <h2 id="diag-stripe-heading">Stripe</h2>
+  <p class="diag-section__intro muted">
+    Live and test credentials, accounts, and webhooks side by side.
+    The Payment Mode pill in the header shows which one is currently
+    in effect for donor checkouts.
+  </p>
+  <div class="diag-modes">
+    <div class="diag-mode diag-mode--live" aria-labelledby="diag-live-heading">
+      <h3 id="diag-live-heading" class="diag-mode__heading">
+        <span class="diag-mode__dot" aria-hidden="true"></span>
+        LIVE <span class="diag-mode__sub">real cards, real money</span>
+      </h3>
+      <div class="diag-grid">
+        <?php foreach ($diagnostics['stripe_live'] as $t): ?><?= $renderTile($t) ?><?php endforeach; ?>
+      </div>
+    </div>
+    <div class="diag-mode diag-mode--test" aria-labelledby="diag-test-heading">
+      <h3 id="diag-test-heading" class="diag-mode__heading">
+        <span class="diag-mode__dot" aria-hidden="true"></span>
+        TEST <span class="diag-mode__sub">Stripe sandbox, no money moves</span>
+      </h3>
+      <div class="diag-grid">
+        <?php foreach ($diagnostics['stripe_test'] as $t): ?><?= $renderTile($t) ?><?php endforeach; ?>
+      </div>
+    </div>
+  </div>
+  <?php if ($diagnostics['legacy_keys'] !== []): ?>
+    <div class="diag-legacy">
+      <h3 class="diag-legacy__heading">Legacy unprefixed keys</h3>
+      <p class="muted">
+        <code>STRIPE_SECRET_KEY</code> and <code>STRIPE_WEBHOOK_SECRET</code>
+        are honored as a fallback for LIVE mode when the
+        <code>STRIPE_LIVE_*</code> pair is unset. Present below because your
+        <code>.env</code> still has one or both set.
+      </p>
+      <div class="diag-grid">
+        <?php foreach ($diagnostics['legacy_keys'] as $t): ?><?= $renderTile($t) ?><?php endforeach; ?>
+      </div>
+    </div>
+  <?php endif; ?>
+</section>
+
+<?= $renderSection('PHP',        $diagnostics['php']) ?>
+<?= $renderSection('Database',   $diagnostics['database']) ?>
+<?= $renderSection('Filesystem', $diagnostics['filesystem']) ?>
+<?= $renderSection('Logs',       $diagnostics['logs']) ?>
+<?= $renderSection('Env vars',   $diagnostics['env']) ?>
 
 <?php if ($diagnostics['log_tail'] !== []): ?>
   <section class="diag-section" aria-labelledby="diag-log-tail">

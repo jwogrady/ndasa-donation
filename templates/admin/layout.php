@@ -607,6 +607,71 @@ $appVersion ??= '';
     overflow: auto;
     white-space: pre;
   }
+  /* Stripe section — live and test get their own bordered sub-panels so it
+     is always obvious which column each status tile belongs to. Colors
+     match the mode pill in the header: green for LIVE, amber for TEST. */
+  .diag-section__intro { margin: -4px 0 14px; font-size: 13px; }
+  .diag-modes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .diag-mode {
+    border: 1px solid var(--border);
+    border-top-width: 3px;
+    border-radius: 8px;
+    padding: 14px 14px 10px;
+    background: rgba(255, 255, 255, 0.015);
+  }
+  .diag-mode--live { border-top-color: #4fa468; }
+  .diag-mode--test { border-top-color: #c29632; }
+  .diag-mode__heading {
+    margin: 0 0 10px;
+    font-family: 'Roboto Condensed', system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #fff;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .diag-mode__sub {
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .diag-mode__dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    display: inline-block; flex: 0 0 auto;
+  }
+  .diag-mode--live .diag-mode__dot { background: #7cc68b; }
+  .diag-mode--test .diag-mode__dot {
+    background: #ffb84a;
+    box-shadow: 0 0 0 0 rgba(255, 184, 74, 0.6);
+    animation: mode-pulse 2s ease-out infinite;
+  }
+  /* Inside a mode panel, shrink tile min-width so two columns still fit. */
+  .diag-mode .diag-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .diag-legacy {
+    margin-top: 16px;
+    padding: 12px 14px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+  }
+  .diag-legacy__heading {
+    margin: 0 0 4px;
+    font-family: 'Roboto Condensed', system-ui, sans-serif;
+    font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1px;
+    color: var(--muted);
+  }
+  .diag-legacy .muted { margin: 0 0 10px; font-size: 12px; }
+  .diag-legacy code { background: rgba(255,255,255,.06); padding: 1px 4px; border-radius: 3px; }
+  @media (max-width: 820px) {
+    .diag-modes { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>

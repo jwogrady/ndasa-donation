@@ -55,16 +55,16 @@ final class Diagnostics
 
     /**
      * @return array{
-     *   app:         list<array{label:string,status:string,value:string,detail:?string}>,
-     *   php:         list<array{label:string,status:string,value:string,detail:?string}>,
-     *   database:    list<array{label:string,status:string,value:string,detail:?string}>,
-     *   filesystem:  list<array{label:string,status:string,value:string,detail:?string}>,
-     *   logs:        list<array{label:string,status:string,value:string,detail:?string}>,
-     *   env:         list<array{label:string,status:string,value:string,detail:?string}>,
-     *   stripe_keys: list<array{label:string,status:string,value:string,detail:?string}>,
-     *   stripe_api:  list<array{label:string,status:string,value:string,detail:?string}>,
-     *   heartbeat:   list<array{label:string,status:string,value:string,detail:?string}>,
-     *   log_tail:    list<string>
+     *   app:        list<array{label:string,status:string,value:string,detail:?string}>,
+     *   php:        list<array{label:string,status:string,value:string,detail:?string}>,
+     *   database:   list<array{label:string,status:string,value:string,detail:?string}>,
+     *   filesystem: list<array{label:string,status:string,value:string,detail:?string}>,
+     *   logs:       list<array{label:string,status:string,value:string,detail:?string}>,
+     *   env:        list<array{label:string,status:string,value:string,detail:?string}>,
+     *   stripe_live: list<array{label:string,status:string,value:string,detail:?string}>,
+     *   stripe_test: list<array{label:string,status:string,value:string,detail:?string}>,
+     *   legacy_keys: list<array{label:string,status:string,value:string,detail:?string}>,
+     *   log_tail:   list<string>
      * }
      */
     public static function gather(): array
@@ -76,9 +76,9 @@ final class Diagnostics
             'filesystem'  => self::filesystemTiles(),
             'logs'        => self::logTiles(),
             'env'         => self::envTiles(),
-            'stripe_keys' => self::stripeKeyTiles(),
-            'stripe_api'  => self::stripeApiTiles(),
-            'heartbeat'   => self::heartbeatTiles(),
+            'stripe_live' => self::stripeModeTiles(AppConfig::MODE_LIVE),
+            'stripe_test' => self::stripeModeTiles(AppConfig::MODE_TEST),
+            'legacy_keys' => self::legacyStripeKeyTiles(),
             'log_tail'    => self::logTail(10),
         ];
     }
@@ -323,65 +323,57 @@ final class Diagnostics
         return $tiles;
     }
 
-    // ────────── Stripe keys (presence + format only) ──────────
-    private static function stripeKeyTiles(): array
+    /**
+     * All tiles for a single Stripe mode (live or test): key presence + format,
+     * webhook heartbeat, Stripe account health, balance, endpoint, webhook
+     * secret format. Caller renders each mode's return value in its own
+     * sectioned panel so live and test never mix visually.
+     *
+     * @return list<array{label:string,status:string,value:string,detail:?string}>
+     */
+    private static function stripeModeTiles(string $mode): array
     {
-        $checks = [
-            ['STRIPE_LIVE_SECRET_KEY',     '/^(sk|rk)_live_[A-Za-z0-9]+$/', 'sk_live_…'],
-            ['STRIPE_LIVE_WEBHOOK_SECRET', '/^whsec_[A-Za-z0-9]+$/',        'whsec_…'],
-            ['STRIPE_TEST_SECRET_KEY',     '/^(sk|rk)_test_[A-Za-z0-9]+$/', 'sk_test_…'],
-            ['STRIPE_TEST_WEBHOOK_SECRET', '/^whsec_[A-Za-z0-9]+$/',        'whsec_…'],
-            ['STRIPE_SECRET_KEY',          '/^(sk|rk)_(live|test)_[A-Za-z0-9]+$/', 'sk_… (legacy)'],
-            ['STRIPE_WEBHOOK_SECRET',      '/^whsec_[A-Za-z0-9]+$/',        'whsec_… (legacy)'],
-        ];
-        $tiles = [];
-        foreach ($checks as [$key, $re, $expected]) {
-            $v = (string) ($_ENV[$key] ?? '');
-            if ($v === '') {
-                $tiles[] = self::tile($key, self::STATUS_GONE, 'not set');
-                continue;
-            }
-            $ok = (bool) preg_match($re, $v);
-            $tiles[] = self::tile(
-                $key,
-                $ok ? self::STATUS_OK : self::STATUS_BAD,
-                $ok ? 'OK' : 'BAD format',
-                $ok ? "expected {$expected}" : "expected {$expected} — value does not match",
-            );
-        }
-        return $tiles;
-    }
+        $up = strtoupper($mode);                                        // LIVE / TEST
+        $secretKey     = "STRIPE_{$up}_SECRET_KEY";
+        $webhookKey    = "STRIPE_{$up}_WEBHOOK_SECRET";
+        $expectedSk    = $mode === AppConfig::MODE_LIVE ? '/^(sk|rk)_live_[A-Za-z0-9]+$/' : '/^(sk|rk)_test_[A-Za-z0-9]+$/';
+        $expectedSkLbl = $mode === AppConfig::MODE_LIVE ? 'sk_live_…' : 'sk_test_…';
 
-    // ────────── Stripe API: account, balance, endpoint ──────────
-    private static function stripeApiTiles(): array
-    {
         $tiles = [];
-        foreach ([AppConfig::MODE_LIVE, AppConfig::MODE_TEST] as $mode) {
-            $creds = AppConfig::resolveStripeCredentials($mode, $_ENV);
-            if ($creds === null) {
-                $tiles[] = self::tile(
-                    ucfirst($mode) . ' mode',
-                    self::STATUS_GONE,
-                    'keys not configured',
-                    "Set STRIPE_{$mode}_SECRET_KEY and STRIPE_{$mode}_WEBHOOK_SECRET.",
-                );
-                continue;
-            }
-            $tiles = array_merge($tiles, self::stripeApiTilesForMode($mode, $creds['secret'], $creds['webhook']));
+
+        // 1. Key presence + format. Labels drop the STRIPE_ prefix since the
+        //    section header already says which mode we're in.
+        $tiles[] = self::keyFormatTile('Secret key', $secretKey, $expectedSk, $expectedSkLbl);
+        $tiles[] = self::keyFormatTile('Webhook secret', $webhookKey, '/^whsec_[A-Za-z0-9]+$/', 'whsec_…');
+
+        // 2. Heartbeat (from the local stripe_events table).
+        $tiles[] = self::heartbeatTile($mode === AppConfig::MODE_LIVE);
+
+        // 3. Stripe API health — but only if the mode's keys resolve. Legacy
+        //    STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET are honored as a live-
+        //    mode fallback so older .env files keep working.
+        $creds = AppConfig::resolveStripeCredentials($mode, $_ENV);
+        if ($creds === null) {
+            $tiles[] = self::tile(
+                'Stripe API',
+                self::STATUS_GONE,
+                'keys not configured',
+                "Set {$secretKey} and {$webhookKey} in .env to enable API checks.",
+            );
+            return $tiles;
         }
-        return $tiles;
+
+        return array_merge($tiles, self::stripeApiTilesForMode($creds['secret']));
     }
 
     /**
      * @return list<array{label:string,status:string,value:string,detail:?string}>
      */
-    private static function stripeApiTilesForMode(string $mode, string $secret, string $webhookSecret): array
+    private static function stripeApiTilesForMode(string $secret): array
     {
-        $label = ucfirst($mode);
         $client = new StripeClient(['api_key' => $secret, 'stripe_version' => '2026-03-25.dahlia']);
         $tiles = [];
 
-        // Account health.
         try {
             $account = $client->accounts->retrieve();
             $chargesOk = (bool) ($account->charges_enabled ?? false);
@@ -389,46 +381,40 @@ final class Diagnostics
 
             $name = (string) ($account->business_profile->name ?? $account->email ?? $account->id);
             $tiles[] = self::tile(
-                "{$label}: Stripe account",
+                'Stripe account',
                 self::STATUS_OK,
                 $name,
                 'Country: ' . (string) ($account->country ?? '?')
                     . ' • Currency: ' . strtoupper((string) ($account->default_currency ?? '?')),
             );
             $tiles[] = self::tile(
-                "{$label}: charges_enabled",
+                'charges_enabled',
                 $chargesOk ? self::STATUS_OK : self::STATUS_BAD,
                 $chargesOk ? 'yes' : 'no',
                 $chargesOk ? null : 'Account cannot accept payments.',
             );
             $tiles[] = self::tile(
-                "{$label}: payouts_enabled",
+                'payouts_enabled',
                 $payoutsOk ? self::STATUS_OK : self::STATUS_WARN,
                 $payoutsOk ? 'yes' : 'no',
                 $payoutsOk ? null : 'Funds will accumulate but not pay out.',
             );
         } catch (\Throwable $e) {
-            $tiles[] = self::tile(
-                "{$label}: Stripe account",
-                self::STATUS_BAD,
-                'API call failed',
-                $e->getMessage(),
-            );
-            return $tiles; // no point in continuing if the key is bad
+            $tiles[] = self::tile('Stripe account', self::STATUS_BAD, 'API call failed', $e->getMessage());
+            return $tiles; // key is bad; no point continuing
         }
 
-        // Balance.
         try {
             $balance = $client->balance->retrieve();
             $available = self::sumBalance($balance->available ?? []);
             $pending   = self::sumBalance($balance->pending ?? []);
             $tiles[] = self::tile(
-                "{$label}: balance",
+                'Balance',
                 self::STATUS_OK,
                 'available ' . self::fmtDollars($available) . ' • pending ' . self::fmtDollars($pending),
             );
         } catch (\Throwable $e) {
-            $tiles[] = self::tile("{$label}: balance", self::STATUS_WARN, 'unavailable', $e->getMessage());
+            $tiles[] = self::tile('Balance', self::STATUS_WARN, 'unavailable', $e->getMessage());
         }
 
         // Webhook endpoint — must match our app URL, be enabled, and subscribe
@@ -445,21 +431,21 @@ final class Diagnostics
             }
             if ($match === null) {
                 $tiles[] = self::tile(
-                    "{$label}: webhook endpoint",
+                    'Webhook endpoint',
                     self::STATUS_BAD,
                     'not found',
                     'No Stripe webhook endpoint points at ' . $expectedUrl,
                 );
             } else {
-                $status = (string) ($match->status ?? '?');
+                $status  = (string) ($match->status ?? '?');
                 $enabled = $status === 'enabled';
-                $events = (array) ($match->enabled_events ?? []);
-                $hasAll = in_array('*', $events, true);
+                $events  = (array) ($match->enabled_events ?? []);
+                $hasAll  = in_array('*', $events, true);
                 $missing = $hasAll ? [] : array_values(array_diff(self::REQUIRED_EVENT_TYPES, $events));
 
                 $tileStatus = self::STATUS_OK;
-                if (!$enabled)         { $tileStatus = self::STATUS_BAD; }
-                elseif ($missing !== []){ $tileStatus = self::STATUS_WARN; }
+                if (!$enabled)          { $tileStatus = self::STATUS_BAD; }
+                elseif ($missing !== []) { $tileStatus = self::STATUS_WARN; }
 
                 $value = $enabled
                     ? ($missing === [] ? 'subscribed, all events' : 'subscribed, ' . count($missing) . ' events missing')
@@ -469,53 +455,68 @@ final class Diagnostics
                 if ($missing !== []) {
                     $detail .= ' • Missing: ' . implode(', ', $missing);
                 }
-                $tiles[] = self::tile("{$label}: webhook endpoint", $tileStatus, $value, $detail);
+                $tiles[] = self::tile('Webhook endpoint', $tileStatus, $value, $detail);
             }
         } catch (\Throwable $e) {
-            $tiles[] = self::tile(
-                "{$label}: webhook endpoint",
-                self::STATUS_WARN,
-                'lookup failed',
-                $e->getMessage(),
-            );
+            $tiles[] = self::tile('Webhook endpoint', self::STATUS_WARN, 'lookup failed', $e->getMessage());
         }
-
-        // Signature secret length/format (cross-checked against what Stripe
-        // actually signs with isn't possible without a replay — but format
-        // match keeps the admin off the "john@status26.com" footgun path).
-        $sigOk = (bool) preg_match('/^whsec_[A-Za-z0-9]+$/', $webhookSecret);
-        $tiles[] = self::tile(
-            "{$label}: webhook secret format",
-            $sigOk ? self::STATUS_OK : self::STATUS_BAD,
-            $sigOk ? 'OK' : 'BAD format',
-            $sigOk ? null : 'Expected whsec_...',
-        );
 
         return $tiles;
     }
 
-    // ────────── Webhook heartbeat (DB) ──────────
-    private static function heartbeatTiles(): array
+    /**
+     * Legacy unprefixed STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET — rendered
+     * as a separate small section so they don't visually compete with the
+     * live/test panels above. Only shown when at least one is set, since a
+     * fresh install with only mode-prefixed keys wouldn't have them.
+     *
+     * @return list<array{label:string,status:string,value:string,detail:?string}>
+     */
+    private static function legacyStripeKeyTiles(): array
     {
-        $tiles = [];
+        $skSet    = !empty($_ENV['STRIPE_SECRET_KEY']);
+        $whsecSet = !empty($_ENV['STRIPE_WEBHOOK_SECRET']);
+        if (!$skSet && !$whsecSet) {
+            return [];
+        }
+        return [
+            self::keyFormatTile('STRIPE_SECRET_KEY',     'STRIPE_SECRET_KEY',     '/^(sk|rk)_(live|test)_[A-Za-z0-9]+$/', 'sk_… (legacy live fallback)'),
+            self::keyFormatTile('STRIPE_WEBHOOK_SECRET', 'STRIPE_WEBHOOK_SECRET', '/^whsec_[A-Za-z0-9]+$/',               'whsec_… (legacy live fallback)'),
+        ];
+    }
+
+    /** Build a "key present + format valid" tile without revealing the value. */
+    private static function keyFormatTile(string $label, string $envKey, string $regex, string $expectedLabel): array
+    {
+        $v = (string) ($_ENV[$envKey] ?? '');
+        if ($v === '') {
+            return self::tile($label, self::STATUS_GONE, 'not set');
+        }
+        $ok = (bool) preg_match($regex, $v);
+        return self::tile(
+            $label,
+            $ok ? self::STATUS_OK : self::STATUS_BAD,
+            $ok ? 'OK' : 'BAD format',
+            $ok ? "expected {$expectedLabel}" : "expected {$expectedLabel} — value does not match",
+        );
+    }
+
+    /** Webhook-heartbeat tile for one mode, reading stripe_events.livemode. */
+    private static function heartbeatTile(bool $live): array
+    {
         try {
             $metrics = new Metrics(Database::connection(), isLive: true);
-            foreach ([true, false] as $live) {
-                $ts = $metrics->lastWebhookAt($live);
-                $label = 'Last webhook (' . ($live ? 'live' : 'test') . ')';
-                if ($ts === null) {
-                    $tiles[] = self::tile($label, self::STATUS_GONE, 'never');
-                    continue;
-                }
-                $age = time() - $ts;
-                $status = $age < 3600 ? self::STATUS_OK
-                        : ($age < 86400 ? self::STATUS_WARN : self::STATUS_BAD);
-                $tiles[] = self::tile($label, $status, self::humanAge($age), date('Y-m-d H:i', $ts));
-            }
+            $ts = $metrics->lastWebhookAt($live);
         } catch (\Throwable $e) {
-            $tiles[] = self::tile('Webhook heartbeat', self::STATUS_BAD, 'query failed', $e->getMessage());
+            return self::tile('Last webhook', self::STATUS_BAD, 'query failed', $e->getMessage());
         }
-        return $tiles;
+        if ($ts === null) {
+            return self::tile('Last webhook', self::STATUS_GONE, 'never');
+        }
+        $age = time() - $ts;
+        $status = $age < 3600 ? self::STATUS_OK
+                : ($age < 86400 ? self::STATUS_WARN : self::STATUS_BAD);
+        return self::tile('Last webhook', $status, self::humanAge($age), date('Y-m-d H:i', $ts));
     }
 
     // ────────── Helpers ──────────
