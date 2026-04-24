@@ -314,7 +314,10 @@ echo
 
 # ——— Step 5: Dry-run sanity check ———
 bold "[5/5] Dry-run sanity check"
-if grep -q 'REPLACE_ME' "$HIDDEN_DIR/.env"; then
+# Match only actual unresolved KEY=REPLACE_ME assignments — not the word in
+# comments or example-URL hints — so a populated .env doesn't false-alarm.
+# The regex ignores leading whitespace and optional surrounding quotes.
+if grep -qE '^[[:space:]]*[A-Z_][A-Z0-9_]*[[:space:]]*=[[:space:]]*"?REPLACE_ME"?[[:space:]]*($|#)' "$HIDDEN_DIR/.env"; then
     yellow "  .env still contains REPLACE_ME placeholders. Edit it, then run:"
     yellow "      php -r 'require \"$HIDDEN_DIR/config/app.php\"; echo \"OK\\n\";'"
 else
