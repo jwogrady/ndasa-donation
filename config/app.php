@@ -108,9 +108,14 @@ define('NDASA_BASE_PATH', rtrim(parse_url($_ENV['APP_URL'], PHP_URL_PATH) ?? '',
 
 $isProduction = ($_ENV['APP_ENV'] ?? 'production') === 'production';
 
-// Webhook doesn't need browser security headers, sessions, or HTTPS redirect —
-// it's a server-to-server POST from Stripe.
-if (!defined('NDASA_SKIP_SESSION')) {
+// Webhook and CLI scripts don't need browser security headers, sessions, or
+// HTTPS redirect — webhook.php is a server-to-server POST from Stripe, and
+// CLI invocations (bin/stripe-import.php, ad-hoc diagnostic one-liners) have
+// no concept of an outgoing HTTP response. On the CLI, the HTTPS-redirect
+// block below would fire unconditionally (no REQUEST_METHOD means the
+// fallback 'GET' + no HTTPS headers) and exit silently before the script
+// got to do its work.
+if (!defined('NDASA_SKIP_SESSION') && PHP_SAPI !== 'cli') {
     // Per-request nonce for CSP. Templates read it via NDASA_CSP_NONCE.
     $cspNonce = base64_encode(random_bytes(16));
     define('NDASA_CSP_NONCE', $cspNonce);
