@@ -198,6 +198,7 @@ final class Metrics
              FROM donations d1
              WHERE livemode = :lm
                AND stripe_subscription_id IS NOT NULL
+               AND (subscription_status IS NULL OR subscription_status != \'cancelled\')
                AND created_at = (
                    SELECT MAX(created_at) FROM donations d2
                    WHERE d2.stripe_subscription_id = d1.stripe_subscription_id

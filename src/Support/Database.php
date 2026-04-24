@@ -110,6 +110,18 @@ final class Database
             // is a no-op).
             $pdo->exec('ALTER TABLE donations ADD COLUMN livemode INTEGER NOT NULL DEFAULT 1');
         }
+        if (!isset($existingCols['subscription_status'])) {
+            // Lifecycle state for the subscription this row belongs to, separate
+            // from the row's own payment `status`. Set to 'cancelled' for every
+            // row of a subscription when customer.subscription.deleted fires.
+            //
+            // Kept distinct from `status` because historical `paid` invoices
+            // must not be rewritten when the subscription later cancels — the
+            // money was received. But the dashboard's "Active Recurring" view
+            // needs to stop counting the subscription toward monthly commitment.
+            // Default NULL = one-time donation or not-yet-cancelled subscription.
+            $pdo->exec('ALTER TABLE donations ADD COLUMN subscription_status TEXT');
+        }
         $pdo->exec('CREATE TABLE IF NOT EXISTS rate_limit (
             key TEXT PRIMARY KEY,
             count INTEGER NOT NULL,

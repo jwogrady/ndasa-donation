@@ -167,6 +167,45 @@ final class EventStoreTest extends DatabaseTestCase
         $this->assertSame('cancelled', $this->findDonationRow('ord_pending')['status']);
     }
 
+    public function test_markSubscriptionCancelled_sets_subscription_status_on_all_rows(): void
+    {
+        // Two paid invoices for the same sub. Historical revenue must stay
+        // paid, but both rows must carry subscription_status='cancelled' so
+        // activeRecurringCommitment() can drop the sub from the monthly view.
+        $this->store->recordDonation($this->baseDonation('inv_1', [
+            'status' => 'paid', 'stripe_subscription_id' => 'sub_x',
+            'payment_intent_id' => 'pi_1',
+        ]));
+        $this->store->recordDonation($this->baseDonation('inv_2', [
+            'status' => 'paid', 'stripe_subscription_id' => 'sub_x',
+            'payment_intent_id' => 'pi_2',
+        ]));
+
+        $this->store->markSubscriptionCancelled('sub_x');
+
+        $r1 = $this->findDonationRow('inv_1');
+        $r2 = $this->findDonationRow('inv_2');
+        $this->assertSame('paid',      $r1['status']);
+        $this->assertSame('paid',      $r2['status']);
+        $this->assertSame('cancelled', $r1['subscription_status']);
+        $this->assertSame('cancelled', $r2['subscription_status']);
+    }
+
+    public function test_markSubscriptionCancelled_is_idempotent_on_redelivery(): void
+    {
+        // Stripe may redeliver customer.subscription.deleted. Second call
+        // must be a safe UPDATE, not accumulate extra rows or error.
+        $this->store->recordDonation($this->baseDonation('inv', [
+            'status' => 'paid', 'stripe_subscription_id' => 'sub_y',
+        ]));
+
+        $this->store->markSubscriptionCancelled('sub_y');
+        $this->store->markSubscriptionCancelled('sub_y');
+
+        $this->assertSame(1, $this->countRows('donations'));
+        $this->assertSame('cancelled', $this->findDonationRow('inv')['subscription_status']);
+    }
+
     /** @param array<string,mixed> $overrides */
     private function baseDonation(string $orderId, array $overrides = []): array
     {

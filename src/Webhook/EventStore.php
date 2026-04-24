@@ -73,24 +73,27 @@ final class EventStore
     }
 
     /**
-     * Mark every donation row linked to a subscription as cancelled. Used
-     * when customer.subscription.deleted fires. Does NOT alter historical
-     * paid rows' status — 'paid' remains paid — but we record cancellation
-     * on rows that were still in a pre-charge state (rare edge case).
+     * Mark a subscription as cancelled. Fired by customer.subscription.deleted.
+     *
+     * Two things happen, and they're different on purpose:
+     *   1. Every row for the subscription gets subscription_status='cancelled'.
+     *      This is the lifecycle flag the dashboard's Active Recurring view
+     *      reads to drop the subscription from the monthly commitment total.
+     *   2. Pre-charge pending rows flip status='cancelled' (rare edge case).
+     *      Paid and refunded rows keep their own status — historical revenue
+     *      must not be rewritten just because the donor later cancels.
      */
     public function markSubscriptionCancelled(string $subscriptionId): void
     {
-        // No status change for paid rows; we only annotate at the row level.
-        // A future column 'subscription_status' could track this explicitly;
-        // today the information lives on Stripe's side and the admin detail
-        // view reads the Stripe dashboard link for the authoritative state.
-        // This method exists as a safe no-op so the webhook handler has a
-        // call site to extend later without re-plumbing the controller.
-        $stmt = $this->db->prepare(
+        $this->db->prepare(
+            "UPDATE donations SET subscription_status = 'cancelled'
+             WHERE stripe_subscription_id = ?"
+        )->execute([$subscriptionId]);
+
+        $this->db->prepare(
             "UPDATE donations SET status = 'cancelled'
              WHERE stripe_subscription_id = ? AND status NOT IN ('paid','refunded')"
-        );
-        $stmt->execute([$subscriptionId]);
+        )->execute([$subscriptionId]);
     }
 
     public function markRefunded(string $paymentIntentId): void

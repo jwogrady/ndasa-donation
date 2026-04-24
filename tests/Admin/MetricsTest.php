@@ -211,6 +211,57 @@ final class MetricsTest extends DatabaseTestCase
         $this->assertSame(0,  $result['monthly_cents']);
     }
 
+    public function test_activeRecurring_excludes_cancelled_subscriptions(): void
+    {
+        // Paid monthly sub whose subscription_status has been flipped to
+        // 'cancelled' (customer.subscription.deleted fired). Historical rows
+        // stay paid — but the dashboard must stop counting it as active.
+        $this->seed('inv_cancelled', [
+            'stripe_subscription_id' => 'sub_gone', 'interval' => 'month',
+            'amount_cents' => 2500, 'status' => 'paid', 'livemode' => false,
+            'subscription_status' => 'cancelled',
+        ]);
+        // A live-running sub in the same mode for contrast.
+        $this->seed('inv_running', [
+            'stripe_subscription_id' => 'sub_ok', 'interval' => 'month',
+            'amount_cents' => 1500, 'status' => 'paid', 'livemode' => false,
+        ]);
+
+        $result = $this->metrics->activeRecurringCommitment();
+        $this->assertSame(1,    $result['subscriptions']);
+        $this->assertSame(1500, $result['monthly_cents']);
+    }
+
+    public function test_activeRecurring_filters_cancelled_independently_in_live_and_test(): void
+    {
+        // Same data shape in both modes to prove the subscription_status
+        // exclusion is applied per-mode, not globally.
+        $this->seed('live_cancel', [
+            'stripe_subscription_id' => 'sub_live_gone', 'interval' => 'month',
+            'amount_cents' => 5000, 'status' => 'paid', 'livemode' => true,
+            'subscription_status' => 'cancelled',
+        ]);
+        $this->seed('live_running', [
+            'stripe_subscription_id' => 'sub_live_ok', 'interval' => 'month',
+            'amount_cents' => 3000, 'status' => 'paid', 'livemode' => true,
+        ]);
+        $this->seed('test_cancel', [
+            'stripe_subscription_id' => 'sub_test_gone', 'interval' => 'month',
+            'amount_cents' => 5000, 'status' => 'paid', 'livemode' => false,
+            'subscription_status' => 'cancelled',
+        ]);
+        $this->seed('test_running', [
+            'stripe_subscription_id' => 'sub_test_ok', 'interval' => 'month',
+            'amount_cents' => 2000, 'status' => 'paid', 'livemode' => false,
+        ]);
+
+        $testMode = new Metrics($this->db, isLive: false);
+        $liveMode = new Metrics($this->db, isLive: true);
+
+        $this->assertSame(['subscriptions' => 1, 'monthly_cents' => 2000], $testMode->activeRecurringCommitment());
+        $this->assertSame(['subscriptions' => 1, 'monthly_cents' => 3000], $liveMode->activeRecurringCommitment());
+    }
+
     // ───────────── repeatDonors + listDonors ─────────────
 
     public function test_repeatDonors_returns_only_2plus_gifts(): void
@@ -309,13 +360,14 @@ final class MetricsTest extends DatabaseTestCase
             'stripe_subscription_id' => null,
             'stripe_customer_id'     => null,
             'livemode'               => true,
+            'subscription_status'    => null,
         ], $overrides);
 
         $this->db->prepare('INSERT INTO donations
             (order_id, payment_intent_id, amount_cents, currency, email, contact_name,
              status, created_at, refunded_at, dedication, email_optin, "interval",
-             stripe_subscription_id, stripe_customer_id, livemode)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+             stripe_subscription_id, stripe_customer_id, livemode, subscription_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
             ->execute([
                 $row['order_id'],
                 $row['payment_intent_id'],
@@ -332,6 +384,7 @@ final class MetricsTest extends DatabaseTestCase
                 $row['stripe_subscription_id'],
                 $row['stripe_customer_id'],
                 $row['livemode'] ? 1 : 0,
+                $row['subscription_status'],
             ]);
     }
 }

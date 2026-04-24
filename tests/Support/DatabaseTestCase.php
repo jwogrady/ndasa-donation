@@ -58,7 +58,8 @@ abstract class DatabaseTestCase extends TestCase
             "interval" TEXT,
             stripe_subscription_id TEXT,
             stripe_customer_id TEXT,
-            livemode INTEGER NOT NULL DEFAULT 1
+            livemode INTEGER NOT NULL DEFAULT 1,
+            subscription_status TEXT
         )');
         $this->db->exec('CREATE TABLE rate_limit (
             key TEXT PRIMARY KEY,
