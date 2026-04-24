@@ -29,8 +29,6 @@ if (is_file($root . '/.env')) {
 $required = [
     'APP_URL',
     'DB_PATH',
-    'MAIL_FROM',
-    'MAIL_BCC_INTERNAL',
 ];
 foreach ($required as $key) {
     if (empty($_ENV[$key])) {
@@ -38,12 +36,6 @@ foreach ($required as $key) {
         error_log("NDASA: missing required env var {$key}");
         exit('Server misconfigured.');
     }
-}
-// SMTP: accept either a pre-formed DSN or discrete components (host is sufficient).
-if (empty($_ENV['SMTP_DSN']) && empty($_ENV['SMTP_HOST'])) {
-    http_response_code(500);
-    error_log('NDASA: SMTP not configured (set SMTP_DSN or SMTP_HOST/SMTP_PORT/SMTP_USERNAME/SMTP_PASSWORD)');
-    exit('Server misconfigured.');
 }
 
 date_default_timezone_set($_ENV['APP_TIMEZONE'] ?? 'UTC');

@@ -11,8 +11,6 @@ Server-specific install kit for the NDASA Donation Platform on Nexcess managed W
 │   └── donation.bak-YYYYMMDD-HHMMSS/         (public-shim snapshots)
 └── public_html/                              (chroot html root; WordPress lives here)
     ├── wp-config.php, wp-admin/, ...         (WordPress, untouched)
-    ├── wp-content/mu-plugins/
-    │   └── ndasa-shared-env.php              (bridges .env into WP Mail SMTP)
     ├── .ndasa-donation/                      (hidden; Require all denied)
     │   ├── src/ config/ templates/ public/ vendor/
     │   ├── storage/donations.sqlite
@@ -35,7 +33,6 @@ Why a hidden `.ndasa-donation/` directory instead of a path above the webroot: N
 - `php` 8.2+ and `composer` on `PATH` (confirmed present on Nexcess managed WP).
 - A working WordPress install under `public_html/`.
 - Stripe account with rotated keys (the previous `sk_live_…` must have been rolled &mdash; it was exposed in the legacy code).
-- SMTP credentials for `admin@ndasafoundation.org` at `secure.emailsrvr.com`.
 - The legacy `public_html/donation/` has already been moved aside (see pre-install).
 
 ## Pre-install (do once, manually)
@@ -78,17 +75,15 @@ The script:
 5. Restores the rescued `.env` and `storage/` contents into the new install. Once the restore is confirmed (non-empty `donations.sqlite` present), removes the staged safety copy from the backup dir so one canonical DB lives on disk.
 6. Seeds `.env` from [deploy/.env.template](.env.template) on a fresh install (skipped on upgrade — the rescued `.env` is authoritative).
 7. Writes the public shims into `public_html/donation/`.
-8. Installs the mu-plugin at `public_html/wp-content/mu-plugins/ndasa-shared-env.php`.
-9. Runs a config-load dry run as a final sanity check.
+8. Runs a config-load dry run as a final sanity check.
 
 It pauses for `y/N` confirmation before writing anything into `public_html/`, and every step prints what it is about to do.
 
 ## Post-install
 
 1. **Fill in `.env`.** Open `public_html/.ndasa-donation/.env` and replace every `REPLACE_ME`:
-    - `STRIPE_SECRET_KEY` &mdash; the *new* rolled key (never the old one)
-    - `STRIPE_WEBHOOK_SECRET` &mdash; see step 3 below
-    - `SMTP_PASSWORD` &mdash; the Rackspace Email password for `admin@ndasafoundation.org`
+    - `STRIPE_LIVE_SECRET_KEY` &mdash; the *new* rolled key (never the old one)
+    - `STRIPE_LIVE_WEBHOOK_SECRET` &mdash; see step 3 below
 
 2. **Test config loads:**
     ```sh
@@ -102,14 +97,12 @@ It pauses for `y/N` confirmation before writing anything into `public_html/`, an
     - Events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `charge.refunded`, `payment_intent.payment_failed`
     - Copy the `whsec_…` signing secret back into `STRIPE_WEBHOOK_SECRET` in `.env`.
 
-4. **Confirm WP Mail SMTP reads from the mu-plugin.** In WP admin &rarr; WP Mail SMTP &rarr; Settings, the plugin should show a notice that SMTP values are "defined in code." Send a test email. If it works, clear the password field in the UI (the `WPMS_SMTP_PASS` constant from the mu-plugin takes over).
-
-5. **End-to-end test in Stripe test mode.** Temporarily swap `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` to test-mode values, make a \$1 donation, and verify:
+4. **End-to-end test in Stripe test mode.** Flip the admin mode toggle to test, make a \$1 donation using a Stripe test card, and verify:
     - Donation form renders at `https://ndasafoundation.org/donation/`.
     - Payment flow redirects to Stripe Checkout, then back to `/donation/success`.
     - Webhook delivers: check `storage/logs/app.log` for any errors, and `storage/donations.sqlite` for a new row.
-    - Staff notification email arrives at `MAIL_BCC_INTERNAL`.
-    - Restore live keys before you finish.
+    - Stripe sends the donor receipt (configured in Stripe Dashboard &rarr; Settings &rarr; Customer emails).
+    - Flip the mode toggle back to live when done.
 
 ## Rollback
 
@@ -140,9 +133,6 @@ To revert to the pre-NDASA-rebuild legacy app:
 mv ~/public_html/donation        ~/donation.new.bak-$(date +%Y%m%d)
 mv ~/public_html/.ndasa-donation ~/ndasa-donation.new.bak-$(date +%Y%m%d)
 mv ~/donation.legacy.YYYYMMDD    ~/public_html/donation
-rm ~/public_html/wp-content/mu-plugins/ndasa-shared-env.php
-# Manually re-enter the SMTP password in WP Mail SMTP settings since the
-# mu-plugin constants are gone.
 ```
 
 Prune old snapshots you no longer need with `deploy/prune-backups.sh` (dry-run by default; see `--help`).

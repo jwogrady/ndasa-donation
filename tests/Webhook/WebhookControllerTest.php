@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace NDASA\Tests\Webhook;
 
-use NDASA\Mail\ReceiptMailer;
 use NDASA\Tests\Support\DatabaseTestCase;
 use NDASA\Tests\Support\Fixtures;
 use NDASA\Webhook\EventStore;
@@ -14,8 +13,6 @@ use NDASA\Webhook\WebhookController;
  *
  * These tests stand the webhook controller up with:
  *   - a real `EventStore` against an in-memory SQLite DB (same schema as prod),
- *   - a real `ReceiptMailer` on Symfony Mailer's `null://null` transport so
- *     send() silently drops mail with no network,
  *   - real Stripe SDK event objects built from array fixtures.
  *
  * No HTTP, no Stripe API calls for outbound events, no signature verification
@@ -31,15 +28,8 @@ final class WebhookControllerTest extends DatabaseTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $_ENV['MAIL_FROM']          = 'test@example.com';
-        $_ENV['MAIL_BCC_INTERNAL']  = 'staff@example.com';
         $this->store      = new EventStore($this->db);
-        $this->controller = new WebhookController($this->store, new ReceiptMailer('null://null'));
-    }
-
-    protected function tearDown(): void
-    {
-        unset($_ENV['MAIL_FROM'], $_ENV['MAIL_BCC_INTERNAL']);
+        $this->controller = new WebhookController($this->store);
     }
 
     // ───────────── checkout.session.completed ─────────────

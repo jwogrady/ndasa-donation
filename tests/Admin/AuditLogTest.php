@@ -19,13 +19,13 @@ final class AuditLogTest extends DatabaseTestCase
     public function test_record_inserts_row_with_timestamp(): void
     {
         $before = time();
-        $this->log->record('admin', 'config.save', 'keys=APP_URL,MAIL_FROM');
+        $this->log->record('admin', 'config.save', 'keys=APP_URL,DONATION_MIN_CENTS');
 
         $this->assertSame(1, $this->countRows('admin_audit'));
         $row = $this->db->query('SELECT * FROM admin_audit LIMIT 1')->fetch(\PDO::FETCH_ASSOC);
         $this->assertSame('admin',       $row['actor']);
         $this->assertSame('config.save', $row['action']);
-        $this->assertSame('keys=APP_URL,MAIL_FROM', $row['detail']);
+        $this->assertSame('keys=APP_URL,DONATION_MIN_CENTS', $row['detail']);
         $this->assertGreaterThanOrEqual($before, (int) $row['created_at']);
     }
 

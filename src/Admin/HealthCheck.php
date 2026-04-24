@@ -135,8 +135,6 @@ final class HealthCheck
         $required = [
             'APP_URL',
             'DB_PATH',
-            'MAIL_FROM',
-            'MAIL_BCC_INTERNAL',
         ];
         $out = [];
         foreach ($required as $key) {
@@ -158,14 +156,6 @@ final class HealthCheck
             $detail = 'Set STRIPE_LIVE_SECRET_KEY and STRIPE_LIVE_WEBHOOK_SECRET in .env (legacy STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET also accepted).';
         }
         $out[] = self::row($label, $stripeOk, $stripeOk ? null : $detail);
-
-        // SMTP is required but satisfied by either a DSN or components.
-        $smtpOk = !empty($_ENV['SMTP_DSN']) || !empty($_ENV['SMTP_HOST']);
-        $out[] = self::row(
-            'Env: SMTP (DSN or HOST)',
-            $smtpOk,
-            $smtpOk ? null : 'Set SMTP_DSN, or SMTP_HOST plus the SMTP_* components.',
-        );
 
         return $out;
     }

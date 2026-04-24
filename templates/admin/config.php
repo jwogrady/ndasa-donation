@@ -56,8 +56,6 @@ ob_start();
         $type = match (true) {
             $isSecret                                          => 'password',
             $key === 'APP_URL'                                 => 'url',
-            $key === 'MAIL_FROM', $key === 'MAIL_BCC_INTERNAL' => 'email',
-            $key === 'SMTP_PORT',
             $key === 'DONATION_MIN_CENTS',
             $key === 'DONATION_MAX_CENTS'                      => 'number',
             default                                            => 'text',
@@ -67,24 +65,14 @@ ob_start();
         <span class="label-text">
           <?= Html::h($key) ?><?php if ($isRequired): ?> <span class="req" aria-label="required">*</span><?php endif; ?>
         </span>
-        <?php if ($key === 'SMTP_ENCRYPTION'): ?>
-          <select name="<?= Html::h($key) ?>">
-            <?php foreach (['', 'tls', 'ssl'] as $opt): ?>
-              <option value="<?= Html::h($opt) ?>"<?= $opt === $value ? ' selected' : '' ?>>
-                <?= $opt === '' ? '(not set)' : Html::h($opt) ?>
-              </option>
-            <?php endforeach; ?>
-          </select>
-        <?php else: ?>
-          <input
-            type="<?= Html::h($type) ?>"
-            name="<?= Html::h($key) ?>"
-            value="<?= Html::h($value) ?>"
-            <?= $isSecret ? 'autocomplete="new-password"' : '' ?>
-            <?= $isRequired ? 'required' : '' ?>
-            <?= $type === 'number' ? 'min="1" step="1" inputmode="numeric"' : '' ?>
-          >
-        <?php endif; ?>
+        <input
+          type="<?= Html::h($type) ?>"
+          name="<?= Html::h($key) ?>"
+          value="<?= Html::h($value) ?>"
+          <?= $isSecret ? 'autocomplete="new-password"' : '' ?>
+          <?= $isRequired ? 'required' : '' ?>
+          <?= $type === 'number' ? 'min="1" step="1" inputmode="numeric"' : '' ?>
+        >
         <?php if (!empty($descriptions[$key])): ?>
           <span class="help"><?= Html::h($descriptions[$key]) ?></span>
         <?php endif; ?>

@@ -16,7 +16,6 @@ declare(strict_types=1);
 define('NDASA_SKIP_SESSION', true);
 require_once __DIR__ . '/../config/app.php';
 
-use NDASA\Mail\ReceiptMailer;
 use NDASA\Support\Database;
 use NDASA\Webhook\EventStore;
 use NDASA\Webhook\WebhookController;
@@ -86,7 +85,6 @@ if ($event === null) {
 
 $controller = new WebhookController(
     new EventStore(Database::connection()),
-    new ReceiptMailer(),
 );
 
 if (!$controller->dispatch($event)) {

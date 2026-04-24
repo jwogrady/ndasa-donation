@@ -12,8 +12,7 @@
 #   3.  Installs Composer dependencies into .ndasa-donation/vendor.
 #   4.  Creates public_html/donation/ (public surface) with shims, assets
 #       symlink, and .htaccess.
-#   5.  Installs the WP mu-plugin that bridges .env into WP Mail SMTP.
-#   6.  Prompts you to edit .env, then runs a dry-run check that the app
+#   5.  Prompts you to edit .env, then runs a dry-run check that the app
 #       can load its config without errors.
 #
 # Safe to re-run: every step is idempotent. It will print what it is about
@@ -37,7 +36,6 @@ set -euo pipefail
 
 HIDDEN_DIR="$WEBROOT/$APP_HIDDEN_NAME"
 PUBLIC_DIR="$WEBROOT/$PUBLIC_NAME"
-MU_DIR="$WEBROOT/wp-content/mu-plugins"
 
 # ——— Pretty output ———
 red()    { printf '\033[31m%s\033[0m\n' "$*"; }
@@ -65,7 +63,6 @@ blue "Source repo:    $REPO_DIR"
 blue "Web root:       $WEBROOT"
 blue "Hidden app dir: $HIDDEN_DIR"
 blue "Public dir:     $PUBLIC_DIR"
-blue "mu-plugins dir: $MU_DIR"
 blue "Backup root:    $BACKUP_ROOT"
 echo
 
@@ -215,7 +212,7 @@ cleanup_rescued() {
 trap cleanup_rescued EXIT
 
 # ——— Step 1: Hidden app directory ———
-bold "[1/6] Creating hidden app directory"
+bold "[1/5] Creating hidden app directory"
 mkdir -p "$HIDDEN_DIR"/{src,config,templates,public,bin,storage}
 # Copy the app tree. Each rsync is scoped to a single subdirectory so
 # only intended parts land in the deployed tree — `deploy/`, `tests/`,
@@ -278,13 +275,13 @@ green "Hidden dir ready at $HIDDEN_DIR"
 echo
 
 # ——— Step 2: Composer install ———
-bold "[2/6] Installing PHP dependencies"
+bold "[2/5] Installing PHP dependencies"
 ( cd "$HIDDEN_DIR" && composer install --no-dev --optimize-autoloader --no-interaction --no-progress )
 green "vendor/ installed."
 echo
 
 # ——— Step 3: .env bootstrap ———
-bold "[3/6] Provisioning .env"
+bold "[3/5] Provisioning .env"
 if [[ -f "$HIDDEN_DIR/.env" ]]; then
     yellow "  .env already exists — leaving it in place."
 elif [[ -n "$RESCUED_ENV" && -f "$RESCUED_ENV" ]]; then
@@ -303,7 +300,7 @@ chmod 600 "$HIDDEN_DIR/.env"
 echo
 
 # ——— Step 4: Public surface ———
-bold "[4/6] Creating public surface at $PUBLIC_DIR"
+bold "[4/5] Creating public surface at $PUBLIC_DIR"
 mkdir -p "$PUBLIC_DIR"
 cp "$REPO_DIR/deploy/shims/index.php"        "$PUBLIC_DIR/index.php"
 cp "$REPO_DIR/deploy/shims/webhook.php"      "$PUBLIC_DIR/webhook.php"
@@ -315,22 +312,8 @@ ln -sfn "../${APP_HIDDEN_NAME}/public/assets" "$PUBLIC_DIR/assets"
 green "Public surface ready."
 echo
 
-# ——— Step 5: WordPress mu-plugin ———
-bold "[5/6] Installing WordPress mu-plugin"
-if [[ ! -d "$MU_DIR" ]]; then
-    mkdir -p "$MU_DIR"
-    green "  Created $MU_DIR"
-fi
-cp "$REPO_DIR/deploy/wp/ndasa-shared-env.php" "$MU_DIR/ndasa-shared-env.php"
-green "  Installed $MU_DIR/ndasa-shared-env.php"
-echo
-yellow "  Once .env has valid SMTP values, WP will read them via this plugin."
-yellow "  You can then clear the password field in the WP Mail SMTP UI;"
-yellow "  it will fall back to the WPMS_SMTP_PASS constant defined in code."
-echo
-
-# ——— Step 6: Dry-run sanity check ———
-bold "[6/6] Dry-run sanity check"
+# ——— Step 5: Dry-run sanity check ———
+bold "[5/5] Dry-run sanity check"
 if grep -q 'REPLACE_ME' "$HIDDEN_DIR/.env"; then
     yellow "  .env still contains REPLACE_ME placeholders. Edit it, then run:"
     yellow "      php -r 'require \"$HIDDEN_DIR/config/app.php\"; echo \"OK\\n\";'"
@@ -363,13 +346,10 @@ echo "                  checkout.session.async_payment_succeeded"
 echo "                  checkout.session.async_payment_failed"
 echo "                  charge.refunded"
 echo "                  payment_intent.payment_failed"
-echo "     Copy the whsec_... signing secret into STRIPE_WEBHOOK_SECRET in .env."
-echo "  4. In WP admin -> WP Mail SMTP, send a test email to confirm the"
-echo "     mu-plugin credentials are working. Then clear the password field"
-echo "     in the UI; the constant from the mu-plugin is what matters."
-echo "  5. Make a real \$1 test donation in Stripe test mode and confirm"
-echo "     both the donor receipt (from Stripe) and the staff notification"
-echo "     (from ReceiptMailer) arrive."
+echo "     Copy the whsec_... signing secret into STRIPE_LIVE_WEBHOOK_SECRET in .env."
+echo "  4. Flip the admin mode toggle to test, make a \$1 test donation with a"
+echo "     Stripe test card, and confirm Stripe sends the donor receipt"
+echo "     (configured in Stripe Dashboard -> Settings -> Customer emails)."
 echo
 echo "To roll back: move the newest snapshot pair from $BACKUP_ROOT/ back into"
 echo "place, e.g.:"

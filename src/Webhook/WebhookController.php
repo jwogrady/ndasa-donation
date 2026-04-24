@@ -15,14 +15,12 @@ declare(strict_types=1);
 
 namespace NDASA\Webhook;
 
-use NDASA\Mail\ReceiptMailer;
 use Stripe\Event;
 
 final class WebhookController
 {
     public function __construct(
         private readonly EventStore $store,
-        private readonly ReceiptMailer $mailer,
     ) {}
 
     /**
@@ -147,21 +145,6 @@ final class WebhookController
             'email_optin'            => $emailOptin,
             'livemode'               => $livemode,
         ]);
-
-        // Stripe emails the donor via receipt_email; notify staff ourselves.
-        try {
-            $this->mailer->sendInternalNotification([
-                'order_id'     => $orderId,
-                'amount_cents' => $amountCents,
-                'currency'     => $currency,
-                'email'        => $email,
-                'name'         => $name,
-                'dedication'   => $dedication,
-            ]);
-        } catch (\Throwable $e) {
-            // Donation is already recorded — don't retry just because mail is down.
-            error_log('Internal notification failed for order ' . $orderId . ': ' . $e->getMessage());
-        }
     }
 
     private function onRefund(object $charge): void

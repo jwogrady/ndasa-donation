@@ -244,14 +244,6 @@ function admin_editable_keys(): array
         'STRIPE_SECRET_KEY',
         'STRIPE_WEBHOOK_SECRET',
         'APP_URL',
-        'MAIL_FROM',
-        'MAIL_FROM_NAME',
-        'MAIL_BCC_INTERNAL',
-        'SMTP_HOST',
-        'SMTP_PORT',
-        'SMTP_ENCRYPTION',
-        'SMTP_USERNAME',
-        'SMTP_PASSWORD',
         'DONATION_MIN_CENTS',
         'DONATION_MAX_CENTS',
         'TRUSTED_PROXIES',
@@ -277,8 +269,6 @@ function admin_required_keys(): array
     return [
         'APP_URL',
         'DB_PATH',
-        'MAIL_FROM',
-        'MAIL_BCC_INTERNAL',
     ];
 }
 
@@ -329,23 +319,6 @@ function admin_validate_field(string $key, string $value): ?string
                 return 'APP_URL must use http or https.';
             }
             return null;
-
-        case 'MAIL_FROM':
-        case 'MAIL_BCC_INTERNAL':
-            return filter_var($value, FILTER_VALIDATE_EMAIL)
-                ? null
-                : "{$key} must be a valid email address.";
-
-        case 'SMTP_PORT':
-            if (!ctype_digit($value) || (int) $value < 1 || (int) $value > 65535) {
-                return 'SMTP_PORT must be an integer between 1 and 65535.';
-            }
-            return null;
-
-        case 'SMTP_ENCRYPTION':
-            return in_array(strtolower($value), ['tls', 'ssl'], true)
-                ? null
-                : 'SMTP_ENCRYPTION must be either "tls" or "ssl".';
 
         case 'DONATION_MIN_CENTS':
         case 'DONATION_MAX_CENTS':
@@ -534,14 +507,6 @@ function render_admin_config(?string $flashOk = null, ?string $flashErr = null):
         'STRIPE_SECRET_KEY'     => 'Stripe live-mode secret key (sk_live_...). Test-mode keys start with sk_test_.',
         'STRIPE_WEBHOOK_SECRET' => 'Signing secret (whsec_...) from the webhook endpoint in the Stripe dashboard.',
         'APP_URL'               => 'Public origin of the donation app, including any subpath (e.g. https://ndasafoundation.org/donation).',
-        'MAIL_FROM'             => 'Address that staff notifications are sent from. Must be a mailbox the SMTP account is allowed to send as.',
-        'MAIL_FROM_NAME'        => 'Display name on outgoing staff notifications. Optional; defaults to "NDASA Foundation".',
-        'MAIL_BCC_INTERNAL'     => 'Address that receives a notification email for each completed donation.',
-        'SMTP_HOST'             => 'SMTP server hostname (e.g. secure.emailsrvr.com).',
-        'SMTP_PORT'             => 'SMTP port. 587 for STARTTLS, 465 for implicit TLS.',
-        'SMTP_ENCRYPTION'       => 'Either "tls" (STARTTLS on 587) or "ssl" (implicit TLS on 465).',
-        'SMTP_USERNAME'         => 'SMTP authentication username.',
-        'SMTP_PASSWORD'         => 'SMTP authentication password. Stored plaintext in .env; protect the file with chmod 600.',
         'DONATION_MIN_CENTS'    => 'Minimum accepted donation amount in cents. Default 1000 ($10).',
         'DONATION_MAX_CENTS'    => 'Maximum accepted donation amount in cents. Default 1000000 ($10,000).',
         'TRUSTED_PROXIES'       => 'Comma-separated IPs or CIDRs of reverse proxies whose X-Forwarded-For may be trusted. Leave empty if the app is directly connected. Never use a wildcard.',
