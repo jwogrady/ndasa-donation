@@ -91,11 +91,11 @@ It pauses for `y/N` confirmation before writing anything into `public_html/`, an
     ```
     Expect no output; any error here is a missing env var or a typo.
 
-3. **Register the Stripe webhook.** In Stripe dashboard &rarr; Developers &rarr; Webhooks &rarr; Add endpoint:
+3. **Register the Stripe webhook.** In Stripe dashboard &rarr; Developers &rarr; Webhooks &rarr; Add endpoint (add one for live and one for test):
     - URL: `https://ndasafoundation.org/donation/webhook.php`
     - API version: `2026-03-25.dahlia` (matches the pin in [config/app.php](../config/app.php))
-    - Events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `charge.refunded`, `payment_intent.payment_failed`
-    - Copy the `whsec_…` signing secret back into `STRIPE_WEBHOOK_SECRET` in `.env`.
+    - Events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `charge.refunded`, `payment_intent.payment_failed`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.deleted`
+    - Copy the `whsec_…` signing secret into `STRIPE_LIVE_WEBHOOK_SECRET` (from the live endpoint) or `STRIPE_TEST_WEBHOOK_SECRET` (from the test endpoint) in `.env`.
 
 4. **End-to-end test in Stripe test mode.** Flip the admin mode toggle to test, make a \$1 donation using a Stripe test card, and verify:
     - Donation form renders at `https://ndasafoundation.org/donation/`.

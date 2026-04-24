@@ -36,54 +36,77 @@ else
     if [[ "$mode" == "600" ]]; then ok ".env mode is 600"; else warn ".env mode is $mode (expected 600)"; fi
 
     # STRIPE_PUBLISHABLE_KEY is NOT required — Checkout is hosted, no JS client key needed.
-    required=(APP_URL STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET DB_PATH)
-    for k in "${required[@]}"; do
+    # Read keys up front so the sanity loop and later sections share one source.
+    # Mode-prefixed names win; legacy unprefixed names are the fallback the
+    # app itself uses (see src/Admin/AppConfig.php::resolveStripeCredentials).
+    read_env() { awk -F= -v k="$1" '$1==k{sub(/^[^=]*=/,""); gsub(/^["'"'"']|["'"'"']$/,""); print; exit}' "$ENV_FILE"; }
+
+    live_sk=$(read_env STRIPE_LIVE_SECRET_KEY)
+    live_wh=$(read_env STRIPE_LIVE_WEBHOOK_SECRET)
+    test_sk=$(read_env STRIPE_TEST_SECRET_KEY)
+    test_wh=$(read_env STRIPE_TEST_WEBHOOK_SECRET)
+    legacy_sk=$(read_env STRIPE_SECRET_KEY)
+    legacy_wh=$(read_env STRIPE_WEBHOOK_SECRET)
+
+    # Effective live credentials: mode-prefixed wins, else legacy fallback.
+    eff_live_sk="${live_sk:-$legacy_sk}"
+    eff_live_wh="${live_wh:-$legacy_wh}"
+
+    # APP_URL and DB_PATH are simple required vars.
+    for k in APP_URL DB_PATH; do
         line=$(grep -E "^${k}=" "$ENV_FILE" | head -1 || true)
-        if [[ -z "$line" ]]; then
-            bad "$k is MISSING from .env"
-            continue
-        fi
-        val=${line#*=}
-        # Strip surrounding quotes.
-        val=${val%\"}; val=${val#\"}; val=${val%\'}; val=${val#\'}
+        if [[ -z "$line" ]]; then bad "$k is MISSING from .env"; continue; fi
+        val=${line#*=}; val=${val%\"}; val=${val#\"}; val=${val%\'}; val=${val#\'}
         if [[ -z "$val" || "$val" == "REPLACE_ME" ]]; then
             bad "$k is empty or REPLACE_ME"
             continue
         fi
-
         case "$k" in
-            STRIPE_SECRET_KEY)
-                if   [[ "$val" == sk_live_* ]]; then ok "STRIPE_SECRET_KEY = sk_live_… (LIVE mode)"
-                elif [[ "$val" == sk_test_* ]]; then warn "STRIPE_SECRET_KEY = sk_test_… (TEST mode — is this intended on prod?)"
-                elif [[ "$val" == rk_*     ]]; then warn "STRIPE_SECRET_KEY is a restricted key (rk_…) — may lack Checkout scope"
-                else                               bad  "STRIPE_SECRET_KEY does not start with sk_ / rk_ (shape wrong)"
-                fi ;;
-            STRIPE_WEBHOOK_SECRET)
-                if   [[ "$val" == whsec_* ]]; then ok "STRIPE_WEBHOOK_SECRET = whsec_… (length=${#val})"
-                else                               bad "STRIPE_WEBHOOK_SECRET does not start with whsec_"
-                fi ;;
-            APP_URL)
-                ok "APP_URL = $val" ;;
+            APP_URL) ok "APP_URL = $val" ;;
             DB_PATH)
                 ok "DB_PATH = $val"
-                if [[ ! -e "$val" ]]; then warn "DB_PATH file does not yet exist (first request will create it)"; fi ;;
+                [[ -e "$val" ]] || warn "DB_PATH file does not yet exist (first request will create it)"
+                ;;
         esac
     done
 
-    # Read keys for later sections. Use awk so we don't fight tr over quote chars.
-    read_env() { awk -F= -v k="$1" '$1==k{sub(/^[^=]*=/,""); gsub(/^["'"'"']|["'"'"']$/,""); print; exit}' "$ENV_FILE"; }
-    sk=$(read_env STRIPE_SECRET_KEY)
-    whsec=$(read_env STRIPE_WEBHOOK_SECRET)
-
-    # Mode sanity — flag if the webhook secret was issued under a different mode.
-    # whsec values don't encode mode in their prefix, but the Stripe dashboard does:
-    # a test-mode endpoint's whsec will reject live events with signature failures.
-    # We can't detect that from the secret alone — noted here for awareness.
-    if [[ "$sk" == sk_live_* ]]; then
-        ok "Secret key is LIVE — ensure the webhook endpoint in the Stripe dashboard is also LIVE mode"
-    elif [[ "$sk" == sk_test_* ]]; then
-        ok "Secret key is TEST — ensure the webhook endpoint in the Stripe dashboard is also TEST mode"
+    # Live credentials.
+    if [[ -z "$eff_live_sk" || "$eff_live_sk" == "REPLACE_ME" ]]; then
+        bad "Live secret key missing (expected STRIPE_LIVE_SECRET_KEY, or legacy STRIPE_SECRET_KEY)"
+    else
+        src="STRIPE_LIVE_SECRET_KEY"
+        [[ -z "$live_sk" ]] && src="STRIPE_SECRET_KEY (legacy fallback)"
+        if   [[ "$eff_live_sk" == sk_live_* ]]; then ok "$src = sk_live_… (LIVE mode)"
+        elif [[ "$eff_live_sk" == sk_test_* ]]; then warn "$src = sk_test_… (TEST mode — is this intended on prod?)"
+        elif [[ "$eff_live_sk" == rk_*      ]]; then warn "$src is a restricted key (rk_…) — may lack Checkout scope"
+        else                                         bad  "$src does not start with sk_ / rk_"
+        fi
     fi
+    if [[ -z "$eff_live_wh" || "$eff_live_wh" == "REPLACE_ME" ]]; then
+        bad "Live webhook secret missing (expected STRIPE_LIVE_WEBHOOK_SECRET, or legacy STRIPE_WEBHOOK_SECRET)"
+    else
+        src="STRIPE_LIVE_WEBHOOK_SECRET"
+        [[ -z "$live_wh" ]] && src="STRIPE_WEBHOOK_SECRET (legacy fallback)"
+        if [[ "$eff_live_wh" == whsec_* ]]; then ok "$src = whsec_… (length=${#eff_live_wh})"
+        else                                     bad "$src does not start with whsec_"
+        fi
+    fi
+
+    # Test credentials — optional, but if present validate them too.
+    if [[ -n "$test_sk" && "$test_sk" != "REPLACE_ME" ]]; then
+        if   [[ "$test_sk" == sk_test_* ]]; then ok "STRIPE_TEST_SECRET_KEY = sk_test_… (TEST mode)"
+        else                                     warn "STRIPE_TEST_SECRET_KEY does not start with sk_test_"
+        fi
+    fi
+    if [[ -n "$test_wh" && "$test_wh" != "REPLACE_ME" ]]; then
+        if [[ "$test_wh" == whsec_* ]]; then ok "STRIPE_TEST_WEBHOOK_SECRET = whsec_… (length=${#test_wh})"
+        else                                 warn "STRIPE_TEST_WEBHOOK_SECRET does not start with whsec_"
+        fi
+    fi
+
+    # Downstream Stripe API probe uses the live key (the prod mode that matters).
+    sk="$eff_live_sk"
+    whsec="$eff_live_wh"
 fi
 
 # —————————————————————————————————————————————————————————
@@ -159,7 +182,7 @@ done
 # —————————————————————————————————————————————————————————
 bold "Done."
 echo "If anything above is RED, start there. The most common root causes are:"
-echo "  • STRIPE_SECRET_KEY invalid / wrong mode"
+echo "  • STRIPE_LIVE_SECRET_KEY invalid / wrong mode (or legacy STRIPE_SECRET_KEY)"
 echo "  • .env not readable by PHP-FPM user (owner/mode)"
 echo "  • storage/ not writable → SQLite open fails before Stripe is called"
 echo "  • Stale OPcache after editing .env — reload PHP-FPM if keys look right"
