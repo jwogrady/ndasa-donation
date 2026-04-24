@@ -147,6 +147,54 @@ final class EventStoreTest extends DatabaseTestCase
         $this->assertSame(0, $this->countRows('donations'));
     }
 
+    public function test_markSubscriptionRefunded_flips_paid_rows_only(): void
+    {
+        // A subscription signup row (no PI) and a failed attempt row share
+        // the same subscription. Only the paid one should flip to refunded;
+        // a failed row shouldn't become "refunded" retroactively.
+        $this->store->recordDonation($this->baseDonation('ord_signup', [
+            'status'                 => 'paid',
+            'payment_intent_id'      => null,            // signup row — no PI
+            'stripe_subscription_id' => 'sub_x',
+        ]));
+        $this->store->recordDonation($this->baseDonation('ord_fail', [
+            'status'                 => 'failed',
+            'payment_intent_id'      => 'pi_fail',
+            'stripe_subscription_id' => 'sub_x',
+        ]));
+
+        $before = time();
+        $this->store->markSubscriptionRefunded('sub_x');
+
+        $signup = $this->findDonationRow('ord_signup');
+        $fail   = $this->findDonationRow('ord_fail');
+        $this->assertSame('refunded', $signup['status']);
+        $this->assertGreaterThanOrEqual($before, (int) $signup['refunded_at']);
+        $this->assertSame('failed', $fail['status']);
+        $this->assertNull($fail['refunded_at']);
+    }
+
+    public function test_setPaymentIntentId_backfills_null_pi(): void
+    {
+        $this->store->recordDonation($this->baseDonation('ord_signup', [
+            'payment_intent_id'      => null,
+            'stripe_subscription_id' => 'sub_y',
+        ]));
+        $this->store->setPaymentIntentId('ord_signup', 'pi_first_invoice');
+        $this->assertSame('pi_first_invoice', $this->findDonationRow('ord_signup')['payment_intent_id']);
+    }
+
+    public function test_setPaymentIntentId_does_not_overwrite_existing_pi(): void
+    {
+        // Guard against a late/duplicate invoice.paid stomping on a PI that
+        // was already set (e.g. by a recurring-charge row keyed by invoice id).
+        $this->store->recordDonation($this->baseDonation('ord_keep', [
+            'payment_intent_id' => 'pi_original',
+        ]));
+        $this->store->setPaymentIntentId('ord_keep', 'pi_would_overwrite');
+        $this->assertSame('pi_original', $this->findDonationRow('ord_keep')['payment_intent_id']);
+    }
+
     public function test_markSubscriptionCancelled_flips_pending_rows_only(): void
     {
         // A paid row and a pending row share the same subscription.

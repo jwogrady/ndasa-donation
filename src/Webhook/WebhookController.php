@@ -153,6 +153,42 @@ final class WebhookController
         if ($pi !== '') {
             $this->store->markRefunded($pi);
         }
+
+        // If the charge is attached to a subscription invoice, also refund
+        // any paid rows for that subscription. Belt-and-suspenders: the
+        // PI-keyed UPDATE above handles one-time donations and (after the
+        // onInvoicePaid backfill) recurring-charge rows. This catches the
+        // edge case where a signup row never got its PI backfilled — old
+        // data from before that backfill existed, or a subscription whose
+        // invoice.paid never arrived to run the backfill.
+        $subscriptionId = $this->subscriptionIdFromCharge($charge);
+        if ($subscriptionId !== '') {
+            $this->store->markSubscriptionRefunded($subscriptionId);
+        }
+    }
+
+    /**
+     * Extract the subscription ID a refunded charge belongs to, if any.
+     * Stripe does not put the subscription ID on the charge directly; we
+     * have to resolve it through charge -> invoice -> subscription. The
+     * invoice field on a charge is just an ID string — we retrieve the
+     * invoice to read its subscription field. Returns '' for one-time
+     * charges (no invoice) or if retrieval fails.
+     */
+    private function subscriptionIdFromCharge(object $charge): string
+    {
+        $invoiceId = (string) ($charge->invoice ?? '');
+        if ($invoiceId === '') {
+            return '';
+        }
+        try {
+            $invoice = \Stripe\Invoice::retrieve($invoiceId);
+            return (string) ($invoice->subscription ?? '');
+        } catch (\Throwable $e) {
+            error_log('Webhook: could not retrieve invoice ' . $invoiceId
+                . ' to resolve subscription: ' . $e->getMessage());
+            return '';
+        }
     }
 
     private function onPaymentFailed(object $pi): void
@@ -208,11 +244,14 @@ final class WebhookController
 
         if ($signupOrderId !== null && $this->store->donationExists($signupOrderId)) {
             // This is the first invoice and the session handler already
-            // recorded the row. Check: did it get recorded without a PI
-            // (subscription mode omits it on the session)? Backfill the PI
-            // on the existing row would require a new setter on EventStore;
-            // skipping for now — the Stripe dashboard is authoritative for
-            // PI lookup and we link out via subscription_id from the admin.
+            // recorded the row. Stamp the PI from this invoice's charge
+            // onto the row — the session handler saw no PI (subscription
+            // mode omits it), but charge.refunded later uses PI for its
+            // UPDATE lookup. Without this backfill, a refunded subscription
+            // would leave the signup row stuck at status='paid'.
+            if ($piId !== '') {
+                $this->store->setPaymentIntentId($signupOrderId, $piId);
+            }
             return;
         }
 

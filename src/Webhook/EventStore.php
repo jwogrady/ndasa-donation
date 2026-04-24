@@ -102,4 +102,35 @@ final class EventStore
             'UPDATE donations SET status = ?, refunded_at = ? WHERE payment_intent_id = ?'
         )->execute(['refunded', time(), $paymentIntentId]);
     }
+
+    /**
+     * Refund every paid row linked to a subscription. Used by onRefund() when
+     * the refunded charge is attached to an invoice for a subscription —
+     * because in that case the donations row's payment_intent_id is often
+     * null (the signup row was created from checkout.session.completed, which
+     * in subscription mode carries no PI), and the PI-keyed markRefunded()
+     * lookup silently no-ops.
+     */
+    public function markSubscriptionRefunded(string $subscriptionId): void
+    {
+        $this->db->prepare(
+            'UPDATE donations SET status = ?, refunded_at = ?
+             WHERE stripe_subscription_id = ? AND status = ?'
+        )->execute(['refunded', time(), $subscriptionId, 'paid']);
+    }
+
+    /**
+     * Set payment_intent_id on an existing donation row. Called by onInvoicePaid()
+     * to backfill the PI onto a subscription signup row that was created from
+     * checkout.session.completed (which in subscription mode has no PI), so
+     * later charge.refunded events against that invoice's charge can find
+     * the row via its PI like they do for one-time donations.
+     */
+    public function setPaymentIntentId(string $orderId, string $paymentIntentId): void
+    {
+        $this->db->prepare(
+            'UPDATE donations SET payment_intent_id = ?
+             WHERE order_id = ? AND payment_intent_id IS NULL'
+        )->execute([$paymentIntentId, $orderId]);
+    }
 }
