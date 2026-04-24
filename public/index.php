@@ -490,7 +490,9 @@ function admin_flash_pop(): array
 
 function admin_redirect_to_dashboard(): void
 {
-    header('Location: /admin', true, 303);
+    // NDASA_BASE_PATH accounts for subpath deploys (e.g. /donation) so the
+    // redirect doesn't bounce through the parent site's router.
+    header('Location: ' . NDASA_BASE_PATH . '/admin', true, 303);
 }
 
 function render_admin_config(?string $flashOk = null, ?string $flashErr = null): void
