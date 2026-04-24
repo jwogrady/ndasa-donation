@@ -34,7 +34,7 @@ Forward-looking plan for the NDASA Donation Platform. This file reflects what th
 - Generic "check with your HR department" employer-matching note (no external lookup link)
 
 **Admin panel** (HTTP Basic Auth)
-- **Dashboard** with four scalar stats plus a **pulse** row: Last Webhook heartbeat (age-bucketed), Active Recurring commitment ($/mo, yearly normalized), 30-day donations sparkline, 30-day refund rate.
+- **Fundraiser dashboard** at `/admin` — reporting only. Four scalar stats plus a **pulse** row: Last Webhook heartbeat split by mode (live + test), Active Recurring commitment ($/mo, yearly normalized, cancelled subs excluded), 30-day donations sparkline, 30-day refund rate.
 - **Repeat-donors panel** rendered below the pulse when any donor has more than one paid gift.
 - **Recent Donations** (10 rows) with per-row detail link.
 - **Transactions index** at `/admin/transactions` with email search, status filter, date range, 25/50/100/500 page-size dropdown; links to per-donation detail.
@@ -42,11 +42,10 @@ Forward-looking plan for the NDASA Donation Platform. This file reflects what th
 - **Donors index + detail** at `/admin/donors{/<sha256(email)>}`. Index is one row per lowercased email, ordered by lifetime giving. Detail shows identity, opt-in state, every donation, any subscriptions, and per-donation Stripe hosted-receipt URLs. Donor URLs are SHA-256 hashes so emails never land in access logs.
 - Donation detail page at `/admin/donations/{order_id}` with mode-aware deep links into Stripe (PaymentIntent + Subscription).
 - CSV export at `/admin/export` with optional date range; filename embeds `-live-` or `-test-` slug; includes interval, subscription id, dedication, newsletter opt-in.
-- Append-only Admin Activity audit log (config saves diff changed keys only; never values).
-- System Health groups: Database, Environment, Configuration; every probe try/catch-wrapped.
-- `.env` config editor with per-field validation, atomic write, CSRF.
-- Runtime Stripe live/test mode toggle persisted in `app_config`.
+- **Diagnostics** at `/admin/diagnostics` — read-only tile grid for App / Stripe API (account + balance + webhook endpoint, live + test) / Stripe keys (presence + format, no values) / Webhook heartbeat / PHP / Database / Filesystem / Logs / Env vars. Hosts the Stripe mode toggle and the append-only admin audit log.
+- Runtime Stripe live/test mode toggle persisted in `app_config`; flips on the next request with no reload.
 - Version resolver: `APP_VERSION` → short git hash → hardcoded fallback.
+- `.env` is SSH-only — no web-editable config surface.
 
 **Security**
 - PCI-DSS SAQ-A (card entry on `checkout.stripe.com`)
@@ -63,15 +62,15 @@ Forward-looking plan for the NDASA Donation Platform. This file reflects what th
 **Infrastructure**
 - SQLite database, WAL journal; schema auto-migrates on connection; 3.7.17-safe (no `UPSERT`, `RETURNING`, window functions, `RENAME COLUMN`, or `DROP COLUMN`)
 - Indexes: `idx_donations_created_at`, `idx_donations_status`, `idx_donations_subscription`, `idx_donations_livemode_created_at`, `idx_donations_livemode_status`, `idx_page_views_created_at`, `idx_admin_audit_created_at`
-- Nexcess managed-WordPress deploy kit (`install.sh`, Apache shims, PHP shims, WP mu-plugin bridging `.env` into WP Mail SMTP)
+- Nexcess managed-WordPress deploy kit (`install.sh`, Apache shims, PHP shims)
 - `install.sh` preserves `.env` and `storage/` across reinstalls; backups written to `~/backups/ndasa-donation/` (not the webroot); staged safety copy survives mid-install failure
 - `deploy/prune-backups.sh` with dry-run default, per-series retention, `--older-than` filter, and hard regex/parent-dir guard on `rm`
-- Mailer falls back to local `sendmail://default` when SMTP env is absent, so missing SMTP never takes the webhook down
+- No application-side mail: donor receipts and internal alerts both come from Stripe
 - `bin/stripe-import.php` back-fills the local ledger from the Stripe API (idempotent, mode-scoped, date-windowable, dry-runnable)
 - Read-only `deploy/diagnose.sh` for on-host triage
 - `bin/check-env-sync.php` verifies `.env.example` and `deploy/.env.template` declare the same keys
 - CI (`.github/workflows/ci.yml`): `php -l`, env-sync, PHPUnit
-- PHPUnit tests for `AmountValidator` and `ClientIp`
+- ~130 PHPUnit tests covering the webhook dispatch path, the event store, the Metrics query surface (including livemode-split heartbeat and cancelled-subscription exclusion), the rate limiter, CSRF, admin auth, audit log, fee calculation, HTML escaping, and value coercion
 
 ## In Progress
 
@@ -79,16 +78,16 @@ Forward-looking plan for the NDASA Donation Platform. This file reflects what th
 
 ## Next: User-Facing Features (Top 5)
 
-1. **Post-donation thank-you email from NDASA** (separate from Stripe's receipt). 48-hour delay, one real impact story, share prompt, unsubscribe link. The biggest retention lever currently unbuilt.
-2. **Additional payment methods**: enable Link / Apple Pay / Google Pay / ACH on the Stripe account and expand `payment_method_types`. Mobile conversion lift is the primary target.
-3. **Real-time social proof** on the donor page: "Join N donors who gave $X this year." Code already has `totalDonationCents()` and `donorCount()`; only the rendering is missing.
-4. **Tax-deduction preview**: compute inline from the selected amount ("Your $100 donation may reduce your federal tax liability by up to $X").
-5. **Recurring dedications propagate.** Today the signup row carries the dedication; subsequent `invoice.paid` rows do not. Replicate onto every recurring row and the staff notification.
+1. **Additional payment methods**: enable Link / Apple Pay / Google Pay / ACH on the Stripe account and expand `payment_method_types`. Mobile conversion lift is the primary target.
+2. **Real-time social proof** on the donor page: "Join N donors who gave $X this year." Code already has `totalDonationCents()` and `donorCount()`; only the rendering is missing.
+3. **Tax-deduction preview**: compute inline from the selected amount ("Your $100 donation may reduce your federal tax liability by up to $X").
+4. **Recurring dedications propagate.** Today the signup row carries the dedication; subsequent `invoice.paid` rows do not. Replicate onto every recurring row so the admin-side subscription detail shows the dedication on every charge.
+5. **Post-donation thank-you via Stripe**: configure a richer Stripe Customer Emails template with NDASA branding and an impact story, rather than the default receipt.
 
 ## Next: Dashboard / Admin / Internal Features (Top 5)
 
-1. **Webhook replay / inspector**: surface recent `stripe_events` rows with a re-dispatch button for the existing `WebhookController`.
-2. **Admin-side subscription cancel**: button on the subscription detail view that calls `Stripe\Subscription::cancel`, authenticated by the same CSRF token the config editor uses.
+1. **Webhook replay / inspector**: surface recent `stripe_events` rows on `/admin/diagnostics` with a re-dispatch button that calls the existing `WebhookController`.
+2. **Admin-side subscription cancel**: button on the subscription detail view that calls `Stripe\Subscription::cancel`, CSRF-protected the same way the mode toggle is.
 3. **Dashboard metrics-failure banner**: when the metrics try/catch hits, show an inline warning above the stat tiles instead of silent zeros.
 4. **Nightly backup-pruner cron entry** documented in `deploy/README.md` as a copy-paste snippet (`--keep 5 --older-than 14 --execute`).
 5. **Donor search on the donors index** (server-side email substring match, same pattern as `/admin/transactions`).
@@ -98,7 +97,7 @@ Forward-looking plan for the NDASA Donation Platform. This file reflects what th
 - Campaign attribution via `?c=<slug>` captured in Stripe metadata and grouped in the dashboard
 - Multi-currency Checkout sessions (today hardcoded `usd`)
 - Stripe Radar fraud-insights surfaced in the admin UI
-- Configurable preset tiers and min/max amounts from the admin UI (today `.env`-only)
+- Configurable preset tiers and min/max amounts from the admin UI (today `.env`-only, SSH edit required)
 - Donor portal on NDASA's side ("your giving history") keyed by email cookie, no login
 - Per-email rate limit in addition to the per-IP one
 - Log rotation config for `storage/logs/` or syslog integration

@@ -4,6 +4,40 @@ All notable changes to the NDASA Donation Platform are documented in this file. 
 
 ## Unreleased
 
+### Added
+
+- **`/admin/diagnostics`** — read-only "geek view" for operational status. Tiles cover App (version, URL, timezone, current mode, base path), PHP (version, SAPI, limits, required extensions, session cookie settings, `display_errors` / `log_errors`), Database (SQLite version, row counts per table, missing indexes), Filesystem (`.env` / DB file / logs-dir writability), Logs (error_log path, last-modified, inline last 10 lines), Env vars (non-secret config with full values; `ADMIN_PASS` masked), Stripe keys (presence + `sk_live_` / `sk_test_` / `whsec_` format only — never reveals values), Stripe API (account `charges_enabled` / `payouts_enabled`, balance, webhook endpoint URL match + enabled + subscribed-events check — queried live against both live and test keys via per-instance `StripeClient`), Webhook heartbeat (live and test split), plus the Stripe mode toggle and admin-activity audit log. Realtime, no caching; every tile catches its own exceptions so a broken Stripe call never blanks the page.
+- **Webhook heartbeat split by mode.** `stripe_events.livemode` stores the verified event's mode. `Metrics::lastWebhookAt(?bool $livemode)` narrows to live or test. The dashboard tile's color tracks the currently-active mode; both mode timestamps render in the tile body so test chatter cannot mask live silence.
+- **`donations.subscription_status` lifecycle column.** Set to `'cancelled'` on every row of a subscription when `customer.subscription.deleted` fires. `Metrics::activeRecurringCommitment()` excludes rows with this flag, so a cancelled subscription drops from Active Recurring on the very next page load. Historical `status='paid'` rows are never rewritten — money received stays recorded as received.
+- **Post/Redirect/Get on the Stripe mode toggle.** Flash messages ride on `$_SESSION`; the POST handler redirects (303) to `/admin/diagnostics` so the next request re-bootstraps against the new `NDASA_STRIPE_MODE` and the status pill, body `is-test-mode` class, and metrics filters all reflect the new mode on first paint.
+- **Live / test webhook-secret verification ladder.** `public/webhook.php` now tries each configured secret (`STRIPE_LIVE_WEBHOOK_SECRET`, legacy `STRIPE_WEBHOOK_SECRET`, `STRIPE_TEST_WEBHOOK_SECRET`) against the incoming signature; first match wins. Handles in-flight retries that span a mode flip.
+
+### Changed
+
+- **Fundraiser dashboard (`/admin`) is reporting-only.** System health, Stripe mode toggle, audit log, missing-required banner, and missing-indexes banner all moved to `/admin/diagnostics`. The test-mode info banner at the top links to Diagnostics.
+- **Admin nav** now reads `Dashboard | Transactions | Subscriptions | Donors | Diagnostics`. Config link removed.
+- **Mode toggle redirect path** is `/admin/diagnostics` (was `/admin`), subpath-aware via `NDASA_BASE_PATH`, so on WordPress-subpath deploys the redirect does not bounce through the parent site's router.
+- **Header contact strip** simplified to phone number only; the Facebook / X / LinkedIn / YouTube icon list was removed.
+
+### Removed
+
+- **Mail subsystem.** Deleted `src/Mail/ReceiptMailer.php`, the `sendInternalNotification()` call from the webhook controller, the WordPress `ndasa-shared-env.php` mu-plugin bridge, and the `symfony/mailer` Composer dependency (along with 13 transitive packages). Donor receipts are sent by Stripe Checkout; internal alerts come from Stripe's own Team / Notifications settings. The application now sends no mail.
+- **`MAIL_*` / `SMTP_*` env vars** dropped from bootstrap presence checks, `HealthCheck`, the admin config validator set, and `deploy/.env.template`. Existing `.env` files may still contain them — they are now ignored, safe to leave in place or remove.
+- **`/admin/config` config editor.** Removed `render_admin_config()`, `handle_admin_config()`, `admin_editable_keys()`, `admin_required_keys()`, `admin_missing_required()`, `admin_validate_field()`, the template, `src/Admin/EnvFile.php`, and its tests. `.env` is now SSH-only — no web-editable surface exists. Removing this surface closes the class of issue that let a webhook signing secret be overwritten with an arbitrary string.
+
+### Fixed
+
+- **Admin mode toggle no longer logs no-op flips.** Submitting the toggle form while already in the target mode (stale page, double-click race, refresh-with-POST) short-circuits with a neutral flash instead of writing `stripe_mode live -> live` to the audit log.
+- **Mode-toggle redirect honors subpath deploys.** Absolute `Location: /admin` sent the browser to the domain root where WordPress caught the request and bounced to `wp-admin`; the redirect now prepends `NDASA_BASE_PATH`.
+- **Subscription cancel drops from Active Recurring.** See the `subscription_status` column above.
+
+### Schema
+
+- `stripe_events.livemode` (INTEGER, NOT NULL, DEFAULT 1)
+- `donations.subscription_status` (TEXT, nullable)
+
+Both migrations are idempotent and SQLite 3.7.17-safe.
+
 ## 1.1.0 — 2026-04-23
 
 Additive release. No breaking changes to env, schema, or routes; the 1.0.0
@@ -43,7 +77,7 @@ the idempotent schema migration adds the new `livemode` column with a
 
 - **Deploy backups live outside the webroot.** `install.sh` now writes snapshots to `~/backups/ndasa-donation/` (overridable via `BACKUP_ROOT`) with `chmod 700`, instead of next to WordPress. Keeps copies of `.env`, the SQLite DB, and app source out of any path that could be served or scanned by WordPress plugins. `mv` across same-filesystem paths remains atomic.
 - **`install.sh` preserves runtime data across reinstalls.** Both `.env` and `storage/` (SQLite DB, WAL/SHM journals, logs) are rescued before the old install is renamed and restored into the fresh install. A staged `storage.safety-copy/` inside the backup dir survives mid-install failures; it is removed only after the restore confirms a non-empty `donations.sqlite` in the new install. On abort, the cleanup trap tells the operator the safety-copy path so recovery is a directory copy.
-- **`ReceiptMailer` falls back to local `sendmail://default`** when neither `SMTP_DSN` nor `SMTP_HOST` is configured. Resolves an earlier failure mode where the webhook handler 500'd during `new ReceiptMailer()` on hosts without SMTP creds, stranding legitimate events.
+- **`ReceiptMailer` falls back to local `sendmail://default`** when neither `SMTP_DSN` nor `SMTP_HOST` is configured. Resolves an earlier failure mode where the webhook handler 500'd during `new ReceiptMailer()` on hosts without SMTP creds, stranding legitimate events. (Removed entirely in the Unreleased section above.)
 - **Webhook signature verification** accepts both the live and test signing secrets, first-secret-wins. Flipping the admin mode toggle no longer strands in-flight retries signed with the previous mode's secret.
 - **Webhook idempotency is two-phase.** The handler runs first; the `stripe_events` row is inserted only after success. A transient handler failure now lets Stripe retry successfully instead of silently deduping a failed event. Downstream writes remain idempotent via `INSERT OR IGNORE` on `donations.order_id`.
 - **`Csrf::rotate()` regenerates the PHP session ID** (`session_regenerate_id(true)`) in addition to minting a fresh token, closing a session-fixation window.
@@ -98,7 +132,7 @@ Initial public release of the secure-rebuild donation platform. Replaces the leg
 - Version resolver: `APP_VERSION` → short git hash → hardcoded fallback; no shell-outs
 - Trusted-proxy XFF resolution (CIDR-aware)
 - Auto-migrating SQLite schema on connection; WAL journal, foreign keys on, 5 s busy timeout
-- Nexcess managed-WordPress deploy kit: `install.sh`, `.htaccess` shims, PHP shims, `ndasa-shared-env.php` mu-plugin
+- Nexcess managed-WordPress deploy kit: `install.sh`, `.htaccess` shims, PHP shims
 - PHPUnit tests for `AmountValidator` and `ClientIp`
 
 ### Changed

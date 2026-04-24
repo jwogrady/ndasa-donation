@@ -19,7 +19,6 @@ One-time, monthly, and yearly giving · admin dashboard · runtime live/test tog
 [![PHP](https://img.shields.io/badge/PHP-8.2+-777bb4?style=for-the-badge&logo=php&logoColor=white)](https://www.php.net/)
 [![SQLite](https://img.shields.io/badge/SQLite-3.7.17+-003b57?style=for-the-badge&logo=sqlite&logoColor=white)](https://sqlite.org/)
 [![Stripe](https://img.shields.io/badge/Stripe-API%202026--03--25-635bff?style=for-the-badge&logo=stripe&logoColor=white)](https://stripe.com/docs/api)
-[![Symfony Mailer](https://img.shields.io/badge/Symfony-Mailer-000000?style=for-the-badge&logo=symfony&logoColor=white)](https://symfony.com/components/Mailer)
 
 <!-- Quality / posture -->
 
@@ -43,7 +42,7 @@ One-time, monthly, and yearly giving · admin dashboard · runtime live/test tog
 
 Accepts **one-time, monthly, and yearly** donations on a public web page. Card data is entered on `checkout.stripe.com` — this application never sees or stores a PAN. Every donation row in the local SQLite ledger is written only after Stripe's signature-verified webhook confirms payment; the browser-facing success page is purely advisory.
 
-Donors get a Stripe-sent receipt and (for recurring) a Stripe Customer Portal link to self-serve cancel or update their card. Staff get an internal notification per paid donation. The admin panel exposes a metrics dashboard, per-donation detail views with deep links into Stripe, grouped system-health checks, a safe `.env` config editor, a runtime live/test Stripe mode toggle, a dated CSV export, and an append-only audit log.
+Donors get a Stripe-sent receipt and (for recurring) a Stripe Customer Portal link to self-serve cancel or update their card. Staff notifications come from Stripe directly (Dashboard → Settings → Team / Notifications) — the app itself sends no email. The admin panel exposes a fundraiser dashboard (donations reporting only), a read-only `/admin/diagnostics` page that surfaces app, PHP, SQLite, filesystem, log, Stripe-key, Stripe-API, and webhook-heartbeat status plus the runtime live/test mode toggle, per-donation detail views with deep links into Stripe, a dated CSV export, and an append-only audit log.
 
 ```
                                 Donor journey
@@ -52,8 +51,6 @@ Donors get a Stripe-sent receipt and (for recurring) a Stripe Customer Portal li
                       │                                        │
                       │                                        ▼
                       └──────── Stripe webhook ──►  /webhook  ─►  SQLite ledger
-                                                         │
-                                                         └─►  Staff email
 ```
 
 ## Feature highlights
@@ -76,14 +73,13 @@ Donors get a Stripe-sent receipt and (for recurring) a Stripe Customer Portal li
 <td width="50%" valign="top">
 
 ### 🧭  Admin panel
-- Dashboard with pulse tiles: **webhook heartbeat**, active recurring $/mo, 30-day sparkline, 30-day refund rate
+- Dashboard with pulse tiles: **webhook heartbeat** (live + test split), active recurring $/mo, 30-day sparkline, 30-day refund rate
 - **Transactions / Subscriptions / Donors** indexes with pagination (25/50/100/500) and filters
 - Per-donation, per-subscription (with live Stripe status), per-donor detail pages
 - CSV export with date-range filter · filename tags live vs test
-- Append-only audit log (config saves, mode toggles)
-- Grouped system health (DB / env / config)
-- Atomic `.env` config editor (CSRF + CR/LF rejected)
-- **Live/Test Stripe mode toggle** · flips on next request, no reload
+- Read-only `/admin/diagnostics` — Stripe account/keys/endpoint status, PHP + SQLite + filesystem + env tiles, recent error-log tail, audit log
+- **Live/Test Stripe mode toggle** (on Diagnostics) · flips on next request, no reload
+- `.env` is SSH-only — no web-editable config surface
 
 </td>
 </tr>
@@ -123,7 +119,7 @@ git clone git@github.com:jwogrady/ndasa-donation.git
 cd ndasa-donation
 composer install
 cp .env.example .env
-# edit .env — Stripe test keys, SMTP, DB_PATH, ADMIN_USER/ADMIN_PASS
+# edit .env — Stripe test keys, DB_PATH, ADMIN_USER/ADMIN_PASS
 php -S 127.0.0.1:8000 -t public
 ```
 
@@ -143,9 +139,6 @@ Required env vars — bootstrap aborts on 500 if any are missing:
 |---|---|
 | `APP_URL` | Public origin, including any subpath |
 | `DB_PATH` | Absolute path to SQLite file (writable by PHP user) |
-| `MAIL_FROM` | Sender address on staff notifications |
-| `MAIL_BCC_INTERNAL` | Recipient of staff donation notifications |
-| `SMTP_HOST` or `SMTP_DSN` | Outbound mail |
 | `ADMIN_USER` / `ADMIN_PASS` | HTTP Basic Auth for `/admin*` |
 | Stripe credentials | See below |
 
@@ -186,15 +179,16 @@ composer install --no-dev --optimize-autoloader
 # reload PHP-FPM so opcache picks up changes
 ```
 
-For a fresh install or upgrade on Nexcess managed WordPress, use the kit in [`deploy/`](deploy/) — `install.sh`, Apache `.htaccess` shims, PHP front-controller shims, `prune-backups.sh`, and a WordPress mu-plugin (`ndasa-shared-env.php`) that bridges `.env` into WP Mail SMTP.
+For a fresh install or upgrade on Nexcess managed WordPress, use the kit in [`deploy/`](deploy/) — `install.sh`, Apache `.htaccess` shims, PHP front-controller shims, and `prune-backups.sh`.
 
 Runtime data is preserved across every reinstall: `install.sh` rescues `.env` and the entire `storage/` tree (SQLite DB + logs + WAL/SHM journals), writes a snapshot of the previous install to `~/backups/ndasa-donation/` (overridable via `BACKUP_ROOT`), and restores the runtime data into the fresh install. A staged safety copy inside the backup dir survives mid-install failures. Prune old snapshots with `deploy/prune-backups.sh` (dry-run by default). See [`deploy/README.md`](deploy/README.md).
 
 Writable-path requirements:
 
-- `.env` — only if the admin config editor will save changes
 - `DB_PATH` — must be writable by the PHP-FPM user
 - `storage/logs/` — must be writable
+
+`.env` is SSH-only; no web-facing code writes it.
 
 ### Backfill from Stripe
 
@@ -204,13 +198,13 @@ Writable-path requirements:
 
 - URL: `/admin`
 - Auth: HTTP Basic Auth (`ADMIN_USER` / `ADMIN_PASS`)
-- Nav: Dashboard / Transactions / Subscriptions / Donors / Config
+- Nav: Dashboard / Transactions / Subscriptions / Donors / Diagnostics
 - Indexes (`/admin/transactions`, `/admin/subscriptions`, `/admin/donors`) — paginated (25/50/100/500); transactions index supports email search, status, and date range
 - Detail pages:
   - `/admin/donations/{order_id}` — per-donation, with Stripe dashboard deep links
   - `/admin/subscriptions/{sub_id}` — per-subscription, calls Stripe for authoritative live status
   - `/admin/donors/{sha256(email)}` — per-donor, hashed URL keeps emails out of access logs
-- Config editor at `/admin/config` — atomic writes to `.env`. Bootstrap-driven values (Stripe keys, timezone, CSP) need a PHP-FPM reload; the live/test Stripe mode toggle doesn't.
+- `/admin/diagnostics` — read-only status tiles (App / Stripe API / Stripe keys / Webhook heartbeat / PHP / Database / Filesystem / Logs / Env) plus the live/test Stripe mode toggle and admin-activity audit log
 - CSV export: `/admin/export?from=YYYY-MM-DD&to=YYYY-MM-DD` (both optional); filename includes `-live-` or `-test-`
 
 ## Documentation

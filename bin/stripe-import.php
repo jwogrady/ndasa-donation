@@ -104,7 +104,12 @@ if ($opts['mode'] === null) {
 // would incorrectly pick up the test key via the legacy fallback whenever
 // the admin toggle is set to test. Re-read the raw .env so the importer's
 // mode selection is independent of the admin toggle — that's its whole job.
-$rawEnv = (new \NDASA\Admin\EnvFile($root . '/.env'))->read();
+$envPath = $root . '/.env';
+if (!is_file($envPath) || !is_readable($envPath)) {
+    fwrite(STDERR, "stripe-import: cannot read .env at {$envPath}\n");
+    exit(2);
+}
+$rawEnv = parse_ini_file($envPath, false, INI_SCANNER_RAW) ?: [];
 $creds  = AppConfig::resolveStripeCredentials($opts['mode'], $rawEnv);
 if ($creds === null) {
     fwrite(STDERR, sprintf(
