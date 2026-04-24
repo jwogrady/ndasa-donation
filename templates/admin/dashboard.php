@@ -218,7 +218,7 @@ if ($daily30 !== []) {
 
 <h2>Recent Donations</h2>
 <p class="muted mode-filter-note">
-  Showing <strong><?= $isTest ? 'TEST' : 'LIVE' ?></strong> donations only.
+  Showing <strong><?= $stripeMode === 'test' ? 'TEST' : 'LIVE' ?></strong> donations only.
   Metrics, the table below, and the CSV export all reflect the current Stripe mode.
 </p>
 <div class="panel">
