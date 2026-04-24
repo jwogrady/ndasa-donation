@@ -4,6 +4,12 @@ All notable changes to the NDASA Donation Platform are documented in this file. 
 
 ## Unreleased
 
+(no changes yet)
+
+## 1.2.0 — 2026-04-24
+
+Additive release that moves operational status out of the fundraiser view and shuts down the web-editable config surface that enabled a prior prod incident (webhook signing secret overwritten with an email address). No schema or URL breaking changes for the donor flow; the admin nav replaces **Config** with **Diagnostics** and `/admin/config` now 404s.
+
 ### Added
 
 - **`/admin/diagnostics`** — read-only "geek view" for operational status. Tiles cover App (version, URL, timezone, current mode, base path), PHP (version, SAPI, limits, required extensions, session cookie settings, `display_errors` / `log_errors`), Database (SQLite version, row counts per table, missing indexes), Filesystem (`.env` / DB file / logs-dir writability), Logs (error_log path, last-modified, inline last 10 lines), Env vars (non-secret config with full values; `ADMIN_PASS` masked), Stripe keys (presence + `sk_live_` / `sk_test_` / `whsec_` format only — never reveals values), Stripe API (account `charges_enabled` / `payouts_enabled`, balance, webhook endpoint URL match + enabled + subscribed-events check — queried live against both live and test keys via per-instance `StripeClient`), Webhook heartbeat (live and test split), plus the Stripe mode toggle and admin-activity audit log. Realtime, no caching; every tile catches its own exceptions so a broken Stripe call never blanks the page.
@@ -11,6 +17,7 @@ All notable changes to the NDASA Donation Platform are documented in this file. 
 - **`donations.subscription_status` lifecycle column.** Set to `'cancelled'` on every row of a subscription when `customer.subscription.deleted` fires. `Metrics::activeRecurringCommitment()` excludes rows with this flag, so a cancelled subscription drops from Active Recurring on the very next page load. Historical `status='paid'` rows are never rewritten — money received stays recorded as received.
 - **Post/Redirect/Get on the Stripe mode toggle.** Flash messages ride on `$_SESSION`; the POST handler redirects (303) to `/admin/diagnostics` so the next request re-bootstraps against the new `NDASA_STRIPE_MODE` and the status pill, body `is-test-mode` class, and metrics filters all reflect the new mode on first paint.
 - **Live / test webhook-secret verification ladder.** `public/webhook.php` now tries each configured secret (`STRIPE_LIVE_WEBHOOK_SECRET`, legacy `STRIPE_WEBHOOK_SECRET`, `STRIPE_TEST_WEBHOOK_SECRET`) against the incoming signature; first match wins. Handles in-flight retries that span a mode flip.
+- **Global Stripe mode pill in the admin header.** Every `/admin*` page now carries a LIVE / TEST badge pinned to the right of the nav. Links to `/admin/diagnostics` where the toggle lives. TEST mode pulses amber; LIVE mode is a quiet green. Ensures the active mode is visible on every admin page, not only on the page that hosts the toggle.
 
 ### Changed
 
@@ -158,5 +165,6 @@ Initial public release of the secure-rebuild donation platform. Replaces the leg
 
 The `master` branch preserves a legacy-import commit (`c86e559`) and a breaking-change removal commit (`2b0b702`) that together record the import and removal of the pre-rebuild codebase. They are intentionally retained so the security rationale for the rebuild is auditable from git history. The 1.0.0 release is a ground-up rewrite, not derived from those trees.
 
+[1.2.0]: https://github.com/jwogrady/ndasa-donation/releases/tag/v1.2.0
 [1.1.0]: https://github.com/jwogrady/ndasa-donation/releases/tag/v1.1.0
 [1.0.0]: https://github.com/jwogrady/ndasa-donation/releases/tag/v1.0.0

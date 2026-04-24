@@ -65,6 +65,50 @@ $appVersion ??= '';
     gap: 20px;
     border-bottom: 1px solid var(--border);
   }
+  /* Global mode pill — pinned to the right edge of the admin header so the
+     active Stripe mode is visible on every page, not just Diagnostics.
+     The Diagnostics page is where the toggle lives; this is status only. */
+  .mode-pill {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-family: 'Roboto Condensed', system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    text-decoration: none;
+    border: 1px solid transparent;
+    transition: background 120ms, border-color 120ms;
+  }
+  .mode-pill__dot {
+    width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+  }
+  .mode-pill--live {
+    background: rgba(79, 164, 104, 0.15);
+    color: #7cc68b;
+    border-color: rgba(79, 164, 104, 0.45);
+  }
+  .mode-pill--live .mode-pill__dot { background: #7cc68b; }
+  .mode-pill--test {
+    background: rgba(194, 150, 50, 0.18);
+    color: #ffb84a;
+    border-color: rgba(194, 150, 50, 0.55);
+  }
+  .mode-pill--test .mode-pill__dot {
+    background: #ffb84a;
+    box-shadow: 0 0 0 0 rgba(255, 184, 74, 0.6);
+    animation: mode-pulse 2s ease-out infinite;
+  }
+  @keyframes mode-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(255, 184, 74, 0.6); }
+    70%  { box-shadow: 0 0 0 6px rgba(255, 184, 74, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 184, 74, 0); }
+  }
+  .mode-pill:hover { background: #2c2f38; border-color: var(--border); color: #fff; }
   .admin-brand {
     display: inline-flex;
     align-items: center;
@@ -582,6 +626,20 @@ $appVersion ??= '';
     <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/donors" class="<?= $active === 'donors' ? 'active' : '' ?>">Donors</a>
     <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/diagnostics" class="<?= $active === 'diagnostics' ? 'active' : '' ?>">Diagnostics</a>
   </nav>
+  <?php
+    // Global mode pill — links to Diagnostics (where the toggle lives) so the
+    // same indicator answers "what mode am I in?" and "how do I flip it?".
+    $layoutMode = defined('NDASA_STRIPE_MODE') ? NDASA_STRIPE_MODE : 'live';
+    $layoutModeClass = $layoutMode === 'test' ? 'mode-pill--test' : 'mode-pill--live';
+    $layoutModeLabel = $layoutMode === 'test' ? 'TEST' : 'LIVE';
+  ?>
+  <a class="mode-pill <?= $layoutModeClass ?>"
+     href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/diagnostics"
+     aria-label="Stripe mode: <?= $layoutModeLabel ?> — open Diagnostics to toggle"
+     title="Stripe mode: <?= $layoutModeLabel ?>. Click to open Diagnostics.">
+    <span class="mode-pill__dot" aria-hidden="true"></span>
+    <?= $layoutModeLabel ?>
+  </a>
 </header>
 <main>
 <?= $body ?>

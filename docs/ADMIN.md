@@ -84,7 +84,7 @@ Plus at least one Stripe key/webhook pair for the currently active mode (see **S
 |---|---|---|
 | `APP_ENV` | `production` | Set to anything other than `production` to disable HTTPS enforcement in local/test environments. |
 | `APP_TIMEZONE` | `UTC` | PHP `date_default_timezone_set()` value. |
-| `APP_VERSION` | `1.0.0` | Explicit version string shown in the admin footer. Ships as the current release tag; override per-environment or clear to fall back to the short git hash and then to the hardcoded constant. |
+| `APP_VERSION` | `1.2.0` | Explicit version string shown in the admin footer. Ships as the current release tag; override per-environment or clear to fall back to the short git hash and then to the hardcoded constant. |
 | `SESSION_NAME` | `ndasa_sess` | PHP session cookie name. |
 | `DONATION_MIN_CENTS` | `1000` | Minimum accepted donation in cents. |
 | `DONATION_MAX_CENTS` | `1000000` | Maximum accepted donation in cents. |
