@@ -418,18 +418,19 @@ final class Diagnostics
         }
 
         // Webhook endpoint — must match our app URL, be enabled, and subscribe
-        // to every event type our handler dispatches.
+        // to every event type our handler dispatches. Flag duplicates at the
+        // same URL because Stripe will POST each event twice and only one
+        // signing secret can match, so the second delivery always 400s.
         try {
             $endpoints = $client->webhookEndpoints->all(['limit' => 30]);
             $expectedUrl = rtrim((string) ($_ENV['APP_URL'] ?? ''), '/') . '/webhook.php';
-            $match = null;
+            $matches = [];
             foreach ($endpoints->data as $ep) {
                 if (rtrim((string) $ep->url, '/') === rtrim($expectedUrl, '/')) {
-                    $match = $ep;
-                    break;
+                    $matches[] = $ep;
                 }
             }
-            if ($match === null) {
+            if ($matches === []) {
                 $tiles[] = self::tile(
                     'Webhook endpoint',
                     self::STATUS_BAD,
@@ -437,6 +438,12 @@ final class Diagnostics
                     'No Stripe webhook endpoint points at ' . $expectedUrl,
                 );
             } else {
+                // Pick the most-recently-updated endpoint so diagnostics tracks
+                // the one you're likely editing, not whatever Stripe returns
+                // first. Reflects UI edits within a few seconds of Save.
+                usort($matches, static fn ($a, $b) => (int) ($b->created ?? 0) <=> (int) ($a->created ?? 0));
+                $match = $matches[0];
+
                 $status  = (string) ($match->status ?? '?');
                 $enabled = $status === 'enabled';
                 $events  = (array) ($match->enabled_events ?? []);
@@ -451,11 +458,23 @@ final class Diagnostics
                     ? ($missing === [] ? 'subscribed, all events' : 'subscribed, ' . count($missing) . ' events missing')
                     : "disabled ({$status})";
 
-                $detail = 'URL: ' . (string) $match->url;
+                $detail = 'ID: ' . (string) $match->id . ' • URL: ' . (string) $match->url;
                 if ($missing !== []) {
                     $detail .= ' • Missing: ' . implode(', ', $missing);
                 }
                 $tiles[] = self::tile('Webhook endpoint', $tileStatus, $value, $detail);
+
+                // Multiple endpoints at the same URL = guaranteed signature
+                // failures on the duplicates' deliveries. Surface explicitly.
+                if (count($matches) > 1) {
+                    $ids = array_map(static fn ($ep) => (string) $ep->id, $matches);
+                    $tiles[] = self::tile(
+                        'Duplicate webhook endpoints',
+                        self::STATUS_BAD,
+                        count($matches) . ' endpoints at same URL',
+                        'IDs: ' . implode(', ', $ids) . ' — Stripe will POST each event to all of them. Delete the extras in Dashboard → Webhooks.',
+                    );
+                }
             }
         } catch (\Throwable $e) {
             $tiles[] = self::tile('Webhook endpoint', self::STATUS_WARN, 'lookup failed', $e->getMessage());
