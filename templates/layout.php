@@ -52,9 +52,9 @@ $nonce       = Html::h(defined('NDASA_CSP_NONCE') ? NDASA_CSP_NONCE : '');
   </div>
 <?php endif; ?>
 <header class="site-header">
-  <!-- Top contact strip: phone left, social right. Mirrors the
-       purple → red → purple gradient bar on ndasafoundation.org so the
-       donation page reads as a continuation of the same site. -->
+  <!-- Top contact strip: phone on a purple → red → purple gradient bar,
+       mirroring ndasafoundation.org so the donation page reads as a
+       continuation of the same site. -->
   <div class="site-header__strip">
     <div class="site-header__strip-inner container container--wide">
       <a class="site-header__phone" href="tel:+18883163272" aria-label="Call NDASA Foundation">
@@ -63,28 +63,6 @@ $nonce       = Html::h(defined('NDASA_CSP_NONCE') ? NDASA_CSP_NONCE : '');
         </svg>
         <span>888-316-3272</span>
       </a>
-      <ul class="site-header__social" aria-label="NDASA Foundation on social">
-        <li><a href="https://facebook.com/NDASAFoundation" aria-label="Facebook" rel="noopener">
-          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
-            <path d="M13 22v-8h3l.5-4H13V7.5c0-1.2.3-2 2-2h2V2.1c-.3 0-1.5-.1-2.8-.1-2.8 0-4.7 1.7-4.7 4.8V10H7v4h2.5v8H13z"/>
-          </svg>
-        </a></li>
-        <li><a href="https://twitter.com/NDASAFoundation" aria-label="X / Twitter" rel="noopener">
-          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
-            <path d="M18.2 2H21l-6.4 7.3L22.5 22H16l-5-6.6L5 22H2l6.8-7.8L1.7 2h6.6l4.6 6.1L18.2 2zm-1 18h1.6L6.8 3.8H5L17.2 20z"/>
-          </svg>
-        </a></li>
-        <li><a href="https://linkedin.com/company/ndasafoundation" aria-label="LinkedIn" rel="noopener">
-          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
-            <path d="M4.98 3.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM3 9h4v12H3V9zm7 0h3.8v1.7h.1c.5-1 1.9-2 3.8-2 4.1 0 4.8 2.7 4.8 6.2V21h-4v-5.5c0-1.3 0-3-1.8-3s-2.1 1.4-2.1 2.9V21h-4V9z"/>
-          </svg>
-        </a></li>
-        <li><a href="https://youtube.com/@ndasafoundation" aria-label="YouTube" rel="noopener">
-          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor">
-            <path d="M23 7.5s-.2-1.6-.9-2.3c-.9-.9-1.8-.9-2.3-1C16.4 4 12 4 12 4s-4.4 0-7.8.2c-.5.1-1.4.1-2.3 1C1.2 5.9 1 7.5 1 7.5S.8 9.4.8 11.3v1.4C.8 14.6 1 16.5 1 16.5s.2 1.6.9 2.3c.9.9 2.1.9 2.6 1 1.9.2 8 .2 8 .2s4.4 0 7.8-.2c.5-.1 1.4-.1 2.3-1 .7-.7.9-2.3.9-2.3s.2-1.9.2-3.8v-1.4c0-1.9-.2-3.8-.2-3.8zM9.8 15V8.3l5.8 3.4L9.8 15z"/>
-          </svg>
-        </a></li>
-      </ul>
     </div>
   </div>
 

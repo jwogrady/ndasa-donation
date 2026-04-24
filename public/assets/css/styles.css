@@ -158,32 +158,6 @@ main { flex: 1; width: 100%; }
 }
 .site-header__phone:hover { color: #fff; opacity: 0.85; }
 .site-header__phone svg { flex: 0 0 auto; }
-.site-header__social {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.site-header__social a {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-  text-decoration: none;
-  transition: background 160ms, transform 160ms;
-}
-.site-header__social a:hover {
-  background: var(--cta);
-  color: #fff;
-  transform: scale(1.08);
-}
-
 /* ── Main band ───────────────────────────────────────────────────────── */
 .site-header__main {
   /* Matches ndasafoundation.org's rgba(200,249,253,0.82) over white. */
@@ -406,7 +380,6 @@ main { flex: 1; width: 100%; }
     padding-bottom: 6px;
   }
   .site-header__phone { font-size: 0.78rem; }
-  .site-header__social a { width: 26px; height: 26px; }
 
   /* Main band reflows: logo + section on top, slogan below, full width. */
   .site-header__main-inner {
@@ -434,8 +407,6 @@ main { flex: 1; width: 100%; }
   .site-header__subtitle { font-size: 0.65rem; }
 }
 @media (max-width: 480px) {
-  /* On very narrow screens, drop social — keep phone only. */
-  .site-header__social { display: none; }
   .site-header__section-tag { font-size: 1.05rem; letter-spacing: 3px; }
   .site-header__section-line { font-size: 0.6rem; letter-spacing: 2px; }
   .site-header__logo { height: 48px; }
@@ -1331,9 +1302,9 @@ a:hover { color: var(--cta); }
 }
 
 @media (max-width: 480px) {
-  /* Drop the contact strip entirely on narrow phones — phone + social
-     aren't worth the vertical real estate when they push the hero
-     below the fold. */
+  /* Drop the contact strip entirely on narrow phones — the phone
+     number isn't worth the vertical real estate when it pushes the
+     hero below the fold. */
   .site-header__strip { display: none; }
 
   /* Hide the rotating slogan too — on a 360px viewport it crammed the
