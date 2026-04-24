@@ -343,6 +343,14 @@ function admin_validate_field(string $key, string $value): ?string
 
 function render_admin_dashboard(?string $flashOk = null, ?string $flashErr = null): void
 {
+    // Pick up any flash left by a prior POST that redirected here (PRG).
+    // Explicit args still win so direct callers can force a specific message.
+    if ($flashOk === null && $flashErr === null) {
+        $flash    = admin_flash_pop();
+        $flashOk  = $flash['ok'];
+        $flashErr = $flash['err'];
+    }
+
     // The dashboard has to render even if the DB is unreachable so the
     // health panel can explain the outage. Initialise every template var
     // with a safe default before the metrics try/catch.
@@ -398,17 +406,22 @@ function render_admin_dashboard(?string $flashOk = null, ?string $flashErr = nul
 
 function handle_admin_stripe_mode(): void
 {
+    // Post/Redirect/Get: the new mode is read from the DB at bootstrap
+    // (config/app.php defines NDASA_STRIPE_MODE there). Re-rendering the
+    // dashboard in-process would show stale status because the constant
+    // was already frozen for this request. Redirect to /admin so the next
+    // request re-bootstraps against the updated value.
     $token = $_POST[Csrf::FIELD] ?? null;
     if (!is_string($token) || !Csrf::validate($token)) {
-        http_response_code(400);
-        render_admin_dashboard(flashErr: 'Session expired. Please try again.');
+        admin_flash_set(err: 'Session expired. Please try again.');
+        admin_redirect_to_dashboard();
         return;
     }
 
     $target = $_POST['mode'] ?? '';
     if ($target !== AppConfig::MODE_LIVE && $target !== AppConfig::MODE_TEST) {
-        http_response_code(400);
-        render_admin_dashboard(flashErr: 'Invalid mode.');
+        admin_flash_set(err: 'Invalid mode.');
+        admin_redirect_to_dashboard();
         return;
     }
 
@@ -417,7 +430,8 @@ function handle_admin_stripe_mode(): void
         $msg = $target === AppConfig::MODE_TEST
             ? 'Test mode is not configured: set STRIPE_TEST_SECRET_KEY and STRIPE_TEST_WEBHOOK_SECRET in .env.'
             : 'Live mode is not configured: set STRIPE_LIVE_SECRET_KEY and STRIPE_LIVE_WEBHOOK_SECRET in .env.';
-        render_admin_dashboard(flashErr: $msg);
+        admin_flash_set(err: $msg);
+        admin_redirect_to_dashboard();
         return;
     }
 
@@ -432,7 +446,8 @@ function handle_admin_stripe_mode(): void
         // with a neutral flash rather than mis-claim a flip happened.
         if ($previous === $target) {
             $label = $target === AppConfig::MODE_TEST ? 'TEST' : 'LIVE';
-            render_admin_dashboard(flashOk: "Stripe mode is already {$label}; no change applied.");
+            admin_flash_set(ok: "Stripe mode is already {$label}; no change applied.");
+            admin_redirect_to_dashboard();
             return;
         }
 
@@ -442,12 +457,40 @@ function handle_admin_stripe_mode(): void
         (new AuditLog($db))->record($actor, 'stripe_mode', "{$previous} -> {$target}");
     } catch (\Throwable $e) {
         error_log('Stripe mode toggle failed: ' . $e->getMessage());
-        render_admin_dashboard(flashErr: 'Could not save the mode change: ' . $e->getMessage());
+        admin_flash_set(err: 'Could not save the mode change: ' . $e->getMessage());
+        admin_redirect_to_dashboard();
         return;
     }
 
     $label = $target === AppConfig::MODE_TEST ? 'TEST' : 'LIVE';
-    render_admin_dashboard(flashOk: "Stripe mode is now {$label}. New checkouts will use {$label} credentials.");
+    admin_flash_set(ok: "Stripe mode is now {$label}. New checkouts will use {$label} credentials.");
+    admin_redirect_to_dashboard();
+}
+
+function admin_flash_set(?string $ok = null, ?string $err = null): void
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        return;
+    }
+    $_SESSION['admin_flash'] = ['ok' => $ok, 'err' => $err];
+}
+
+function admin_flash_pop(): array
+{
+    if (session_status() !== PHP_SESSION_ACTIVE || !isset($_SESSION['admin_flash'])) {
+        return ['ok' => null, 'err' => null];
+    }
+    $flash = $_SESSION['admin_flash'];
+    unset($_SESSION['admin_flash']);
+    return [
+        'ok'  => is_string($flash['ok'] ?? null) ? $flash['ok'] : null,
+        'err' => is_string($flash['err'] ?? null) ? $flash['err'] : null,
+    ];
+}
+
+function admin_redirect_to_dashboard(): void
+{
+    header('Location: /admin', true, 303);
 }
 
 function render_admin_config(?string $flashOk = null, ?string $flashErr = null): void
