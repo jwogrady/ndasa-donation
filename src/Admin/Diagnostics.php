@@ -329,6 +329,11 @@ final class Diagnostics
      * secret format. Caller renders each mode's return value in its own
      * sectioned panel so live and test never mix visually.
      *
+     * Reads from NDASA_RAW_ENV rather than $_ENV because config/app.php
+     * overwrites $_ENV['STRIPE_SECRET_KEY'] with the *active* mode's value at
+     * bootstrap, which would make the legacy-fallback path resolve the wrong
+     * credentials for the inactive mode and talk to the wrong Stripe account.
+     *
      * @return list<array{label:string,status:string,value:string,detail:?string}>
      */
     private static function stripeModeTiles(string $mode): array
@@ -339,12 +344,13 @@ final class Diagnostics
         $expectedSk    = $mode === AppConfig::MODE_LIVE ? '/^(sk|rk)_live_[A-Za-z0-9]+$/' : '/^(sk|rk)_test_[A-Za-z0-9]+$/';
         $expectedSkLbl = $mode === AppConfig::MODE_LIVE ? 'sk_live_…' : 'sk_test_…';
 
+        $rawEnv = self::rawEnv();
         $tiles = [];
 
         // 1. Key presence + format. Labels drop the STRIPE_ prefix since the
         //    section header already says which mode we're in.
-        $tiles[] = self::keyFormatTile('Secret key', $secretKey, $expectedSk, $expectedSkLbl);
-        $tiles[] = self::keyFormatTile('Webhook secret', $webhookKey, '/^whsec_[A-Za-z0-9]+$/', 'whsec_…');
+        $tiles[] = self::keyFormatTile('Secret key', $secretKey, $expectedSk, $expectedSkLbl, $rawEnv);
+        $tiles[] = self::keyFormatTile('Webhook secret', $webhookKey, '/^whsec_[A-Za-z0-9]+$/', 'whsec_…', $rawEnv);
 
         // 2. Heartbeat (from the local stripe_events table).
         $tiles[] = self::heartbeatTile($mode === AppConfig::MODE_LIVE);
@@ -352,7 +358,7 @@ final class Diagnostics
         // 3. Stripe API health — but only if the mode's keys resolve. Legacy
         //    STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET are honored as a live-
         //    mode fallback so older .env files keep working.
-        $creds = AppConfig::resolveStripeCredentials($mode, $_ENV);
+        $creds = AppConfig::resolveStripeCredentials($mode, $rawEnv);
         if ($creds === null) {
             $tiles[] = self::tile(
                 'Stripe API',
@@ -364,6 +370,31 @@ final class Diagnostics
         }
 
         return array_merge($tiles, self::stripeApiTilesForMode($creds['secret']));
+    }
+
+    /**
+     * Snapshot of the six Stripe env keys captured at bootstrap, before
+     * config/app.php overwrites $_ENV with mode-resolved values. Falls back
+     * to $_ENV for non-PHP-web contexts (tests) where the constant isn't
+     * defined; in that case the overwrite hasn't happened either, so $_ENV
+     * is still raw.
+     *
+     * @return array<string,string>
+     */
+    private static function rawEnv(): array
+    {
+        if (defined('NDASA_RAW_ENV')) {
+            /** @var array<string,string> */
+            return NDASA_RAW_ENV;
+        }
+        return [
+            'STRIPE_LIVE_SECRET_KEY'     => (string) ($_ENV['STRIPE_LIVE_SECRET_KEY']     ?? ''),
+            'STRIPE_LIVE_WEBHOOK_SECRET' => (string) ($_ENV['STRIPE_LIVE_WEBHOOK_SECRET'] ?? ''),
+            'STRIPE_TEST_SECRET_KEY'     => (string) ($_ENV['STRIPE_TEST_SECRET_KEY']     ?? ''),
+            'STRIPE_TEST_WEBHOOK_SECRET' => (string) ($_ENV['STRIPE_TEST_WEBHOOK_SECRET'] ?? ''),
+            'STRIPE_SECRET_KEY'          => (string) ($_ENV['STRIPE_SECRET_KEY']          ?? ''),
+            'STRIPE_WEBHOOK_SECRET'      => (string) ($_ENV['STRIPE_WEBHOOK_SECRET']      ?? ''),
+        ];
     }
 
     /**
@@ -486,28 +517,36 @@ final class Diagnostics
     /**
      * Legacy unprefixed STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET — rendered
      * as a separate small section so they don't visually compete with the
-     * live/test panels above. Only shown when at least one is set, since a
-     * fresh install with only mode-prefixed keys wouldn't have them.
+     * live/test panels above. Only shown when at least one is set in the
+     * raw .env (ignoring the bootstrap-rewritten $_ENV values). Fresh
+     * installs with only mode-prefixed keys won't see this section.
      *
      * @return list<array{label:string,status:string,value:string,detail:?string}>
      */
     private static function legacyStripeKeyTiles(): array
     {
-        $skSet    = !empty($_ENV['STRIPE_SECRET_KEY']);
-        $whsecSet = !empty($_ENV['STRIPE_WEBHOOK_SECRET']);
+        $rawEnv = self::rawEnv();
+        $skSet    = !empty($rawEnv['STRIPE_SECRET_KEY']);
+        $whsecSet = !empty($rawEnv['STRIPE_WEBHOOK_SECRET']);
         if (!$skSet && !$whsecSet) {
             return [];
         }
         return [
-            self::keyFormatTile('STRIPE_SECRET_KEY',     'STRIPE_SECRET_KEY',     '/^(sk|rk)_(live|test)_[A-Za-z0-9]+$/', 'sk_… (legacy live fallback)'),
-            self::keyFormatTile('STRIPE_WEBHOOK_SECRET', 'STRIPE_WEBHOOK_SECRET', '/^whsec_[A-Za-z0-9]+$/',               'whsec_… (legacy live fallback)'),
+            self::keyFormatTile('STRIPE_SECRET_KEY',     'STRIPE_SECRET_KEY',     '/^(sk|rk)_(live|test)_[A-Za-z0-9]+$/', 'sk_… (legacy live fallback)', $rawEnv),
+            self::keyFormatTile('STRIPE_WEBHOOK_SECRET', 'STRIPE_WEBHOOK_SECRET', '/^whsec_[A-Za-z0-9]+$/',               'whsec_… (legacy live fallback)', $rawEnv),
         ];
     }
 
-    /** Build a "key present + format valid" tile without revealing the value. */
-    private static function keyFormatTile(string $label, string $envKey, string $regex, string $expectedLabel): array
+    /**
+     * Build a "key present + format valid" tile without revealing the value.
+     *
+     * @param array<string,string> $env Env source to read from. Callers pass
+     *     NDASA_RAW_ENV (via rawEnv()) to bypass the bootstrap overwrite of
+     *     STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET.
+     */
+    private static function keyFormatTile(string $label, string $envKey, string $regex, string $expectedLabel, array $env): array
     {
-        $v = (string) ($_ENV[$envKey] ?? '');
+        $v = (string) ($env[$envKey] ?? '');
         if ($v === '') {
             return self::tile($label, self::STATUS_GONE, 'not set');
         }

@@ -102,15 +102,13 @@ if ($opts['mode'] === null) {
 // *currently selected* mode. It also rewrote $_ENV['STRIPE_SECRET_KEY']
 // with that mode's key, which means resolveStripeCredentials(live, $_ENV)
 // would incorrectly pick up the test key via the legacy fallback whenever
-// the admin toggle is set to test. Re-read the raw .env so the importer's
-// mode selection is independent of the admin toggle — that's its whole job.
-$envPath = $root . '/.env';
-if (!is_file($envPath) || !is_readable($envPath)) {
-    fwrite(STDERR, "stripe-import: cannot read .env at {$envPath}\n");
-    exit(2);
-}
-$rawEnv = parse_ini_file($envPath, false, INI_SCANNER_RAW) ?: [];
-$creds  = AppConfig::resolveStripeCredentials($opts['mode'], $rawEnv);
+// the admin toggle is set to test. Read from NDASA_RAW_ENV (snapshotted
+// before the bootstrap overwrite) so the importer's mode selection is
+// independent of the admin toggle — that's its whole job.
+$creds = AppConfig::resolveStripeCredentials(
+    $opts['mode'],
+    defined('NDASA_RAW_ENV') ? NDASA_RAW_ENV : $_ENV,
+);
 if ($creds === null) {
     fwrite(STDERR, sprintf(
         "stripe-import: --mode=%s selected, but its credentials aren't in .env.\n",

@@ -75,6 +75,21 @@ if ($stripeCreds === null) {
 $stripeSecret  = $stripeCreds['secret'];
 $stripeWebhook = $stripeCreds['webhook'];
 
+// Snapshot the raw env BEFORE the overwrite below. Diagnostics and the
+// stripe-import CLI need to resolve the *other* mode's credentials too —
+// if we only have the mode-resolved values in $_ENV, resolveStripeCredentials()
+// picks the active mode's key via the legacy fallback path and misreports
+// the inactive mode's endpoint. Keeping a pristine copy here means callers
+// that care about the source values have somewhere honest to look.
+define('NDASA_RAW_ENV', [
+    'STRIPE_LIVE_SECRET_KEY'     => (string) ($_ENV['STRIPE_LIVE_SECRET_KEY']     ?? ''),
+    'STRIPE_LIVE_WEBHOOK_SECRET' => (string) ($_ENV['STRIPE_LIVE_WEBHOOK_SECRET'] ?? ''),
+    'STRIPE_TEST_SECRET_KEY'     => (string) ($_ENV['STRIPE_TEST_SECRET_KEY']     ?? ''),
+    'STRIPE_TEST_WEBHOOK_SECRET' => (string) ($_ENV['STRIPE_TEST_WEBHOOK_SECRET'] ?? ''),
+    'STRIPE_SECRET_KEY'          => (string) ($_ENV['STRIPE_SECRET_KEY']          ?? ''),
+    'STRIPE_WEBHOOK_SECRET'      => (string) ($_ENV['STRIPE_WEBHOOK_SECRET']      ?? ''),
+]);
+
 // Re-populate $_ENV so downstream code (webhook.php, admin) reads the mode-
 // appropriate secret without needing to know about the mode system.
 $_ENV['STRIPE_SECRET_KEY']     = $stripeSecret;
