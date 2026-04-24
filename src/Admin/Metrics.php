@@ -162,13 +162,22 @@ final class Metrics
 
     /**
      * Unix timestamp of the most recently received Stripe webhook event, or
-     * null if the server has never successfully processed one. Not filtered
-     * by mode — Stripe delivers both live and test events to the same
-     * endpoint, so the heartbeat answers "is the pipe open?".
+     * null if the server has never successfully processed one.
+     *
+     * $livemode=null returns the newest event of either mode ("is the pipe
+     * open at all?"). $livemode=true/false narrows to that mode — needed
+     * because test chatter can mask a broken live pipe otherwise.
      */
-    public function lastWebhookAt(): ?int
+    public function lastWebhookAt(?bool $livemode = null): ?int
     {
-        $v = $this->db->query('SELECT MAX(received_at) FROM stripe_events')->fetchColumn();
+        if ($livemode === null) {
+            $v = $this->db->query('SELECT MAX(received_at) FROM stripe_events')->fetchColumn();
+        } else {
+            $stmt = $this->db->prepare('SELECT MAX(received_at) FROM stripe_events WHERE livemode = :lm');
+            $stmt->bindValue(':lm', $livemode ? 1 : 0, PDO::PARAM_INT);
+            $stmt->execute();
+            $v = $stmt->fetchColumn();
+        }
         return $v === null || $v === false ? null : (int) $v;
     }
 

@@ -31,7 +31,9 @@
  * @var ?string          $flashOk          Success flash from the mode toggle.
  * @var ?string          $flashErr         Error flash from the mode toggle.
  * @var list<array{id:int,actor:string,action:string,detail:?string,created_at:int}> $auditEntries
- * @var ?int             $lastWebhookAt    Unix ts of most recent webhook ingest, or null.
+ * @var ?int             $lastWebhookAt    Unix ts of most recent webhook ingest (any mode), or null.
+ * @var ?int             $lastWebhookLiveAt Unix ts of most recent live-mode webhook, or null.
+ * @var ?int             $lastWebhookTestAt Unix ts of most recent test-mode webhook, or null.
  * @var array{subscriptions:int,monthly_cents:int} $recurring Active recurring commitment.
  * @var list<array{email:string,contact_name:?string,donations:int,total_cents:int,last_at:int}> $repeatDonors
  * @var list<array{date:string,count:int,total_cents:int}> $daily30 Last 30 calendar days, oldest-first.
@@ -143,25 +145,27 @@ ob_start();
 // Five inline panels answer five operational questions at a glance:
 // plumbing health, recurring commitment, trend, retention, refund spike.
 
-// Webhook heartbeat: render red/amber/green by age buckets.
-$hbStatus = 'gone';
-$hbLabel  = 'Never received';
-if ($lastWebhookAt !== null) {
-    $age = time() - $lastWebhookAt;
-    if ($age < 3600) {
-        $hbStatus = 'ok';
-        $hbLabel = 'within the last hour';
-    } elseif ($age < 86400) {
-        $hbStatus = 'warn';
-        $hbLabel = 'within the last day';
-    } else {
-        $hbStatus = 'bad';
-        // e.g. "3d 4h ago"
-        $d = intdiv($age, 86400);
-        $h = intdiv($age % 86400, 3600);
-        $hbLabel = ($d > 0 ? $d . 'd ' : '') . $h . 'h ago';
+// Webhook heartbeat: red/amber/green reflects the currently-active mode's
+// pipe health, because that's the pipe donations are flowing through right
+// now. Both mode timestamps still render in the tile body so test chatter
+// can't mask live silence (the specific failure we had in prod).
+$hbAgeLabel = static function (?int $ts): array {
+    if ($ts === null) {
+        return ['gone', 'never'];
     }
-}
+    $age = time() - $ts;
+    if ($age < 3600)  { return ['ok',   'within the last hour']; }
+    if ($age < 86400) { return ['warn', 'within the last day']; }
+    $d = intdiv($age, 86400);
+    $h = intdiv($age % 86400, 3600);
+    return ['bad', ($d > 0 ? $d . 'd ' : '') . $h . 'h ago'];
+};
+
+[$hbLiveStatus, $hbLiveLabel] = $hbAgeLabel($lastWebhookLiveAt);
+[$hbTestStatus, $hbTestLabel] = $hbAgeLabel($lastWebhookTestAt);
+[$hbStatus,     $hbLabel]     = $stripeMode === 'test'
+    ? [$hbTestStatus, $hbTestLabel]
+    : [$hbLiveStatus, $hbLiveLabel];
 
 // Build a simple unit-normalized polyline for the 30-day sparkline.
 $sparkPath = '';
@@ -193,12 +197,15 @@ if ($daily30 !== []) {
 <div class="pulse">
 
   <div class="pulse__tile pulse__tile--hb pulse__tile--<?= Html::h($hbStatus) ?>">
-    <div class="pulse__label">Last Webhook</div>
+    <div class="pulse__label">Last Webhook (<?= $stripeMode === 'test' ? 'test' : 'live' ?>)</div>
     <div class="pulse__value"><?= Html::h($hbLabel) ?></div>
     <div class="pulse__sub">
-      <?= $lastWebhookAt !== null
-          ? Html::h(date('Y-m-d H:i', $lastWebhookAt))
-          : 'Stripe events table is empty' ?>
+      <span class="hb-mode hb-mode--<?= Html::h($hbLiveStatus) ?>">
+        live: <?= $lastWebhookLiveAt !== null ? Html::h(date('Y-m-d H:i', $lastWebhookLiveAt)) : '—' ?>
+      </span>
+      <span class="hb-mode hb-mode--<?= Html::h($hbTestStatus) ?>">
+        test: <?= $lastWebhookTestAt !== null ? Html::h(date('Y-m-d H:i', $lastWebhookTestAt)) : '—' ?>
+      </span>
     </div>
   </div>
 

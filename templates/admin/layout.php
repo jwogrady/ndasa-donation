@@ -387,6 +387,13 @@ $appVersion ??= '';
     font-size: 0.8rem;
     color: var(--muted, #8a92a1);
   }
+  /* Heartbeat tile: one line per mode, colored by that mode's freshness so
+     test-pipe health can't disguise live-pipe silence. */
+  .hb-mode { display: block; line-height: 1.35; }
+  .hb-mode--ok   { color: #4fa468; }
+  .hb-mode--warn { color: #c29632; }
+  .hb-mode--bad  { color: #c0504d; }
+  .hb-mode--gone { color: #6a6f7a; }
   .pulse__spark {
     display: block;
     width: 100%;

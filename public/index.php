@@ -359,6 +359,8 @@ function render_admin_dashboard(?string $flashOk = null, ?string $flashErr = nul
     $recent = [];
     $stripeMode    = current_stripe_mode();
     $lastWebhookAt = null;
+    $lastWebhookLiveAt = null;
+    $lastWebhookTestAt = null;
     $recurring     = ['subscriptions' => 0, 'monthly_cents' => 0];
     $repeatDonors  = [];
     $daily30       = [];
@@ -372,7 +374,9 @@ function render_admin_dashboard(?string $flashOk = null, ?string $flashErr = nul
         $totalCents    = $metrics->totalDonationCents();
         $conversionPct = $metrics->conversionRatePercent();
         $recent        = $metrics->recentDonations(10);
-        $lastWebhookAt = $metrics->lastWebhookAt();
+        $lastWebhookAt     = $metrics->lastWebhookAt();
+        $lastWebhookLiveAt = $metrics->lastWebhookAt(true);
+        $lastWebhookTestAt = $metrics->lastWebhookAt(false);
         $recurring     = $metrics->activeRecurringCommitment();
         $repeatDonors  = $metrics->repeatDonors(10);
         $daily30       = $metrics->dailyTotalsLast(30);

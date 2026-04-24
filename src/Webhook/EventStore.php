@@ -18,12 +18,12 @@ final class EventStore
     }
 
     /** @return bool true if newly inserted, false if already present */
-    public function markProcessed(string $eventId, string $type): bool
+    public function markProcessed(string $eventId, string $type, bool $livemode = true): bool
     {
         $stmt = $this->db->prepare(
-            'INSERT OR IGNORE INTO stripe_events (id, type, received_at) VALUES (?, ?, ?)'
+            'INSERT OR IGNORE INTO stripe_events (id, type, received_at, livemode) VALUES (?, ?, ?, ?)'
         );
-        $stmt->execute([$eventId, $type, time()]);
+        $stmt->execute([$eventId, $type, time(), $livemode ? 1 : 0]);
         return $stmt->rowCount() === 1;
     }
 

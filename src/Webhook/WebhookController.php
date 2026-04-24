@@ -67,7 +67,7 @@ final class WebhookController
         // A failure here would cause a redelivery to re-run the handler; the
         // downstream writes are idempotent, so that is acceptable.
         try {
-            $this->store->markProcessed($event->id, $event->type);
+            $this->store->markProcessed($event->id, $event->type, (bool) ($event->livemode ?? false));
         } catch (\Throwable $e) {
             error_log('Webhook mark-processed failed (handler already ran): ' . $e->getMessage());
         }

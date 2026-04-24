@@ -40,7 +40,8 @@ abstract class DatabaseTestCase extends TestCase
         $this->db->exec('CREATE TABLE stripe_events (
             id TEXT PRIMARY KEY,
             type TEXT NOT NULL,
-            received_at INTEGER NOT NULL
+            received_at INTEGER NOT NULL,
+            livemode INTEGER NOT NULL DEFAULT 1
         )');
         $this->db->exec('CREATE TABLE donations (
             order_id TEXT PRIMARY KEY,

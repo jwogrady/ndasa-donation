@@ -44,6 +44,19 @@ final class Database
             type TEXT NOT NULL,
             received_at INTEGER NOT NULL
         )');
+        // Same mode tagging as donations: 1 = live event, 0 = test. Lets the
+        // dashboard answer "is the live pipe open?" separately from "is the
+        // test pipe open?" — test chatter must not mask live silence.
+        // Pre-column rows existed before this was added; backfilling to 1 is
+        // safe for every deployed environment (no test traffic ever landed in
+        // prod). See donations.livemode migration note for rationale.
+        $eventCols = [];
+        foreach ($pdo->query("PRAGMA table_info(stripe_events)") as $col) {
+            $eventCols[(string) ($col['name'] ?? '')] = true;
+        }
+        if (!isset($eventCols['livemode'])) {
+            $pdo->exec('ALTER TABLE stripe_events ADD COLUMN livemode INTEGER NOT NULL DEFAULT 1');
+        }
         $pdo->exec('CREATE TABLE IF NOT EXISTS donations (
             order_id TEXT PRIMARY KEY,
             payment_intent_id TEXT UNIQUE,
