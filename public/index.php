@@ -19,8 +19,6 @@ use NDASA\Admin\AppConfig;
 use NDASA\Admin\AuditLog;
 use NDASA\Admin\Auth as AdminAuth;
 use NDASA\Admin\Diagnostics as AdminDiagnostics;
-use NDASA\Admin\EnvFile;
-use NDASA\Admin\HealthCheck as AdminHealthCheck;
 use NDASA\Admin\Metrics as AdminMetrics;
 use NDASA\Admin\Version as AdminVersion;
 use NDASA\Http\ClientIp;
@@ -59,8 +57,6 @@ try {
         $method === 'GET'  && $path === '/success'       => render_success(),
         $method === 'GET'  && $path === '/admin'              => render_admin_dashboard(),
         $method === 'GET'  && $path === '/admin/diagnostics'  => render_admin_diagnostics(),
-        $method === 'GET'  && $path === '/admin/config'       => render_admin_config(),
-        $method === 'POST' && $path === '/admin/config'       => handle_admin_config(),
         $method === 'POST' && $path === '/admin/stripe-mode'  => handle_admin_stripe_mode(),
         $method === 'GET'  && $path === '/admin/export'       => handle_admin_export(),
         $method === 'GET'  && $path === '/admin/transactions' => render_admin_transactions(),
@@ -239,114 +235,12 @@ function not_found(): void
 //  can assume the caller is authenticated.
 // ————————————————————————————————————————————————————————————————
 
-/** @return list<string> Editable .env keys exposed in the admin config form. */
-function admin_editable_keys(): array
+function render_admin_dashboard(): void
 {
-    return [
-        'STRIPE_SECRET_KEY',
-        'STRIPE_WEBHOOK_SECRET',
-        'APP_URL',
-        'DONATION_MIN_CENTS',
-        'DONATION_MAX_CENTS',
-        'TRUSTED_PROXIES',
-    ];
-}
-
-/**
- * Env vars the admin panel treats as mandatory for the request-time admin
- * flows. Must stay in sync with the fail-closed check in config/app.php.
- *
- * Stripe key/webhook pairs are intentionally excluded: bootstrap synthesizes
- * $_ENV['STRIPE_SECRET_KEY'] / $_ENV['STRIPE_WEBHOOK_SECRET'] from the mode-
- * specific pair (STRIPE_LIVE_* / STRIPE_TEST_*) at request time, so those two
- * keys are always populated by the time the admin handler runs — the presence
- * check here would always pass and mislead the operator. Bootstrap already
- * fails closed if the selected mode's credentials are missing; the mode panel
- * surfaces live-ready / test-ready explicitly.
- *
- * @return list<string>
- */
-function admin_required_keys(): array
-{
-    return [
-        'APP_URL',
-        'DB_PATH',
-    ];
-}
-
-/** @return list<string> Required keys that are currently empty. */
-function admin_missing_required(): array
-{
-    $missing = [];
-    foreach (admin_required_keys() as $k) {
-        if (empty($_ENV[$k])) {
-            $missing[] = $k;
-        }
-    }
-    return $missing;
-}
-
-/**
- * Per-field sanity check for admin-config submissions. Returns a user-facing
- * error message when invalid, or null when the value is acceptable. Only
- * called for non-empty values; presence is enforced separately.
- */
-function admin_validate_field(string $key, string $value): ?string
-{
-    switch ($key) {
-        case 'STRIPE_SECRET_KEY':
-            // sk_live_... / sk_test_... / rk_live_... / rk_test_... (restricted keys).
-            // Reject anything else — a stray email or URL here silently breaks
-            // checkout at request time instead of at config save.
-            if (!preg_match('/^(sk|rk)_(live|test)_[A-Za-z0-9]+$/', $value)) {
-                return 'STRIPE_SECRET_KEY must be a Stripe secret key (sk_live_... or sk_test_...).';
-            }
-            return null;
-
-        case 'STRIPE_WEBHOOK_SECRET':
-            // Stripe signing secrets always start with whsec_. A non-matching
-            // value here causes every webhook to 400 with "signature failed",
-            // which silently drops refunds, invoice.paid, and the rest.
-            if (!preg_match('/^whsec_[A-Za-z0-9]+$/', $value)) {
-                return 'STRIPE_WEBHOOK_SECRET must be a Stripe signing secret (whsec_...).';
-            }
-            return null;
-
-        case 'APP_URL':
-            $parts = parse_url($value);
-            if ($parts === false || empty($parts['scheme']) || empty($parts['host'])) {
-                return 'APP_URL must be an absolute URL (e.g. https://example.org/donation).';
-            }
-            if (!in_array(strtolower($parts['scheme']), ['http', 'https'], true)) {
-                return 'APP_URL must use http or https.';
-            }
-            return null;
-
-        case 'DONATION_MIN_CENTS':
-        case 'DONATION_MAX_CENTS':
-            if (!ctype_digit($value) || (int) $value < 1) {
-                return "{$key} must be a positive integer (amount in cents).";
-            }
-            return null;
-
-        default:
-            return null;
-    }
-}
-
-function render_admin_dashboard(?string $flashOk = null, ?string $flashErr = null): void
-{
-    // Pick up any flash left by a prior POST that redirected here (PRG).
-    // Explicit args still win so direct callers can force a specific message.
-    if ($flashOk === null && $flashErr === null) {
-        $flash    = admin_flash_pop();
-        $flashOk  = $flash['ok'];
-        $flashErr = $flash['err'];
-    }
-
-    // The dashboard has to render even if the DB is unreachable so the
-    // health panel can explain the outage. Initialise every template var
-    // with a safe default before the metrics try/catch.
+    // Fundraiser view: donation reporting only. System health, audit log,
+    // mode toggle, and env-var presence all live on /admin/diagnostics.
+    // Every template var starts at a safe zero so a DB outage still lets
+    // the page render (with all zeros, which is honest).
     $pageViews = $donationCount = $donorCount = $totalCents = 0;
     $conversionPct = 0.0;
     $recent = [];
@@ -378,25 +272,7 @@ function render_admin_dashboard(?string $flashOk = null, ?string $flashErr = nul
         error_log('Admin dashboard metrics unavailable: ' . $e->getMessage());
     }
 
-    // Target mode's credentials must be present before the toggle is offered,
-    // or the flip would break the donor form on the next request.
-    $testReady = AppConfig::resolveStripeCredentials(AppConfig::MODE_TEST, $_ENV) !== null;
-    $liveReady = AppConfig::resolveStripeCredentials(AppConfig::MODE_LIVE, $_ENV) !== null;
-
-    $missingRequired = admin_missing_required();
-    // One probe populates both the grouped panel and the missing-index banner.
-    $healthAll       = AdminHealthCheck::all();
-    $health          = $healthAll['groups'];
-    $missingIndexes  = $healthAll['missing_indexes'];
-    $appVersion      = AdminVersion::current();
-    $csrf            = Csrf::token();
-
-    $auditEntries = [];
-    try {
-        $auditEntries = (new AuditLog(Database::connection()))->recent(20);
-    } catch (\Throwable $e) {
-        error_log('Audit read failed: ' . $e->getMessage());
-    }
+    $appVersion = AdminVersion::current();
 
     require __DIR__ . '/../templates/admin/dashboard.php';
 }
@@ -411,14 +287,14 @@ function handle_admin_stripe_mode(): void
     $token = $_POST[Csrf::FIELD] ?? null;
     if (!is_string($token) || !Csrf::validate($token)) {
         admin_flash_set(err: 'Session expired. Please try again.');
-        admin_redirect_to_dashboard();
+        admin_redirect_to_diagnostics();
         return;
     }
 
     $target = $_POST['mode'] ?? '';
     if ($target !== AppConfig::MODE_LIVE && $target !== AppConfig::MODE_TEST) {
         admin_flash_set(err: 'Invalid mode.');
-        admin_redirect_to_dashboard();
+        admin_redirect_to_diagnostics();
         return;
     }
 
@@ -428,7 +304,7 @@ function handle_admin_stripe_mode(): void
             ? 'Test mode is not configured: set STRIPE_TEST_SECRET_KEY and STRIPE_TEST_WEBHOOK_SECRET in .env.'
             : 'Live mode is not configured: set STRIPE_LIVE_SECRET_KEY and STRIPE_LIVE_WEBHOOK_SECRET in .env.';
         admin_flash_set(err: $msg);
-        admin_redirect_to_dashboard();
+        admin_redirect_to_diagnostics();
         return;
     }
 
@@ -444,7 +320,7 @@ function handle_admin_stripe_mode(): void
         if ($previous === $target) {
             $label = $target === AppConfig::MODE_TEST ? 'TEST' : 'LIVE';
             admin_flash_set(ok: "Stripe mode is already {$label}; no change applied.");
-            admin_redirect_to_dashboard();
+            admin_redirect_to_diagnostics();
             return;
         }
 
@@ -455,13 +331,13 @@ function handle_admin_stripe_mode(): void
     } catch (\Throwable $e) {
         error_log('Stripe mode toggle failed: ' . $e->getMessage());
         admin_flash_set(err: 'Could not save the mode change: ' . $e->getMessage());
-        admin_redirect_to_dashboard();
+        admin_redirect_to_diagnostics();
         return;
     }
 
     $label = $target === AppConfig::MODE_TEST ? 'TEST' : 'LIVE';
     admin_flash_set(ok: "Stripe mode is now {$label}. New checkouts will use {$label} credentials.");
-    admin_redirect_to_dashboard();
+    admin_redirect_to_diagnostics();
 }
 
 function admin_flash_set(?string $ok = null, ?string $err = null): void
@@ -485,11 +361,13 @@ function admin_flash_pop(): array
     ];
 }
 
-function admin_redirect_to_dashboard(): void
+function admin_redirect_to_diagnostics(): void
 {
+    // Mode toggle lives on /admin/diagnostics (the "geek view"); land the
+    // operator back where they clicked so the flash shows next to the form.
     // NDASA_BASE_PATH accounts for subpath deploys (e.g. /donation) so the
     // redirect doesn't bounce through the parent site's router.
-    header('Location: ' . NDASA_BASE_PATH . '/admin', true, 303);
+    header('Location: ' . NDASA_BASE_PATH . '/admin/diagnostics', true, 303);
 }
 
 function render_admin_diagnostics(): void
@@ -499,124 +377,23 @@ function render_admin_diagnostics(): void
     // own failures so a broken Stripe call never blanks the page.
     $diagnostics = AdminDiagnostics::gather();
     $appVersion  = AdminVersion::current();
+    $stripeMode  = current_stripe_mode();
+    $testReady   = AppConfig::resolveStripeCredentials(AppConfig::MODE_TEST, $_ENV) !== null;
+    $liveReady   = AppConfig::resolveStripeCredentials(AppConfig::MODE_LIVE, $_ENV) !== null;
+    $csrf        = Csrf::token();
+
+    $flash    = admin_flash_pop();
+    $flashOk  = $flash['ok'];
+    $flashErr = $flash['err'];
+
+    $auditEntries = [];
+    try {
+        $auditEntries = (new AuditLog(Database::connection()))->recent(20);
+    } catch (\Throwable $e) {
+        error_log('Audit read failed: ' . $e->getMessage());
+    }
 
     require __DIR__ . '/../templates/admin/diagnostics.php';
-}
-
-function render_admin_config(?string $flashOk = null, ?string $flashErr = null): void
-{
-    $fields = admin_editable_keys();
-
-    $envPath = dirname(__DIR__) . '/.env';
-    $stored  = (new EnvFile($envPath))->read();
-
-    // Prefer live env (may reflect host-injected overrides) over file contents.
-    $values = [];
-    foreach ($fields as $k) {
-        $values[$k] = (string) ($_ENV[$k] ?? $stored[$k] ?? '');
-    }
-
-    $descriptions = [
-        'STRIPE_SECRET_KEY'     => 'Stripe live-mode secret key (sk_live_...). Test-mode keys start with sk_test_.',
-        'STRIPE_WEBHOOK_SECRET' => 'Signing secret (whsec_...) from the webhook endpoint in the Stripe dashboard.',
-        'APP_URL'               => 'Public origin of the donation app, including any subpath (e.g. https://ndasafoundation.org/donation).',
-        'DONATION_MIN_CENTS'    => 'Minimum accepted donation amount in cents. Default 1000 ($10).',
-        'DONATION_MAX_CENTS'    => 'Maximum accepted donation amount in cents. Default 1000000 ($10,000).',
-        'TRUSTED_PROXIES'       => 'Comma-separated IPs or CIDRs of reverse proxies whose X-Forwarded-For may be trusted. Leave empty if the app is directly connected. Never use a wildcard.',
-    ];
-
-    $csrf            = Csrf::token();
-    $missingRequired = admin_missing_required();
-    $appVersion      = AdminVersion::current();
-    $requiredKeys    = array_flip(admin_required_keys());
-
-    require __DIR__ . '/../templates/admin/config.php';
-}
-
-function handle_admin_config(): void
-{
-    // Basic Auth does not prevent CSRF — browsers auto-send credentials.
-    // Validate the same CSRF token the donation form uses.
-    $token = $_POST[Csrf::FIELD] ?? null;
-    if (!is_string($token) || !Csrf::validate($token)) {
-        http_response_code(400);
-        render_admin_config(flashErr: 'Your session expired or the request was invalid. Please try again.');
-        return;
-    }
-
-    $fields   = admin_editable_keys();
-    $required = array_flip(admin_required_keys());
-    $updates  = [];
-
-    foreach ($fields as $k) {
-        $v = trim((string) ($_POST[$k] ?? ''));
-        if ($v === '') {
-            if (isset($required[$k])) {
-                render_admin_config(flashErr: "{$k} cannot be empty.");
-                return;
-            }
-            // Optional field left blank — write empty so the key round-trips
-            // and any previous value is cleared.
-            $updates[$k] = '';
-            continue;
-        }
-        if (preg_match('/[\r\n]/', $v)) {
-            render_admin_config(flashErr: "{$k} contains an invalid character.");
-            return;
-        }
-        if (($err = admin_validate_field($k, $v)) !== null) {
-            render_admin_config(flashErr: $err);
-            return;
-        }
-        $updates[$k] = $v;
-    }
-
-    // Donation bounds sanity: min must be strictly less than max. Compare the
-    // resolved post-save values, falling back to current env for any field
-    // that was left blank this submission.
-    $min = (int) ($updates['DONATION_MIN_CENTS'] !== '' ? $updates['DONATION_MIN_CENTS'] : ($_ENV['DONATION_MIN_CENTS'] ?? 1000));
-    $max = (int) ($updates['DONATION_MAX_CENTS'] !== '' ? $updates['DONATION_MAX_CENTS'] : ($_ENV['DONATION_MAX_CENTS'] ?? 1_000_000));
-    if ($min >= $max) {
-        render_admin_config(flashErr: 'DONATION_MIN_CENTS must be less than DONATION_MAX_CENTS.');
-        return;
-    }
-
-    $envPath = dirname(__DIR__) . '/.env';
-    $envFile = new EnvFile($envPath);
-
-    // Compute which keys actually changed so the audit log is useful rather
-    // than "every key, every save". Compare against the on-disk file (not
-    // $_ENV), so a field the operator leaves blank that was previously set
-    // shows up as a change.
-    $previous = $envFile->read();
-    $changed = [];
-    foreach ($updates as $k => $v) {
-        $before = (string) ($previous[$k] ?? '');
-        if ($before !== $v) {
-            $changed[] = $k;
-        }
-    }
-
-    try {
-        $envFile->update($updates);
-    } catch (\Throwable $e) {
-        error_log('Admin config write failed: ' . $e->getMessage());
-        render_admin_config(flashErr: 'Could not save changes: ' . $e->getMessage());
-        return;
-    }
-
-    if ($changed !== []) {
-        $actor = log_safe((string) ($_SERVER['PHP_AUTH_USER'] ?? '?'));
-        // Record which keys changed, never the values — secrets must not
-        // leak into the audit log.
-        (new AuditLog(Database::connection()))->record(
-            $actor,
-            'config_save',
-            'changed: ' . implode(', ', $changed),
-        );
-    }
-
-    render_admin_config(flashOk: 'Saved. A PHP-FPM reload may be required for changes to take effect.');
 }
 
 /**

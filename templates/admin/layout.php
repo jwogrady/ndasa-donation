@@ -6,7 +6,7 @@
  * @var string $body        Pre-rendered body HTML (escaping is the caller's
  *                           responsibility — templates must run values through
  *                           NDASA\Support\Html::h() before interpolating).
- * @var string $active      Optional nav key: "dashboard", "transactions", "subscriptions", "donors", or "config".
+ * @var string $active      Optional nav key: "dashboard", "transactions", "subscriptions", "donors", or "diagnostics".
  * @var string $appVersion  Resolved app version string for the footer.
  */
 
@@ -581,7 +581,6 @@ $appVersion ??= '';
     <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/subscriptions" class="<?= $active === 'subscriptions' ? 'active' : '' ?>">Subscriptions</a>
     <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/donors" class="<?= $active === 'donors' ? 'active' : '' ?>">Donors</a>
     <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/diagnostics" class="<?= $active === 'diagnostics' ? 'active' : '' ?>">Diagnostics</a>
-    <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/config" class="<?= $active === 'config' ? 'active' : '' ?>">Config</a>
   </nav>
 </header>
 <main>
