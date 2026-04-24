@@ -302,6 +302,24 @@ function admin_missing_required(): array
 function admin_validate_field(string $key, string $value): ?string
 {
     switch ($key) {
+        case 'STRIPE_SECRET_KEY':
+            // sk_live_... / sk_test_... / rk_live_... / rk_test_... (restricted keys).
+            // Reject anything else — a stray email or URL here silently breaks
+            // checkout at request time instead of at config save.
+            if (!preg_match('/^(sk|rk)_(live|test)_[A-Za-z0-9]+$/', $value)) {
+                return 'STRIPE_SECRET_KEY must be a Stripe secret key (sk_live_... or sk_test_...).';
+            }
+            return null;
+
+        case 'STRIPE_WEBHOOK_SECRET':
+            // Stripe signing secrets always start with whsec_. A non-matching
+            // value here causes every webhook to 400 with "signature failed",
+            // which silently drops refunds, invoice.paid, and the rest.
+            if (!preg_match('/^whsec_[A-Za-z0-9]+$/', $value)) {
+                return 'STRIPE_WEBHOOK_SECRET must be a Stripe signing secret (whsec_...).';
+            }
+            return null;
+
         case 'APP_URL':
             $parts = parse_url($value);
             if ($parts === false || empty($parts['scheme']) || empty($parts['host'])) {
