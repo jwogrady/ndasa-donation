@@ -18,6 +18,7 @@ require_once __DIR__ . '/../config/app.php';
 use NDASA\Admin\AppConfig;
 use NDASA\Admin\AuditLog;
 use NDASA\Admin\Auth as AdminAuth;
+use NDASA\Admin\Diagnostics as AdminDiagnostics;
 use NDASA\Admin\EnvFile;
 use NDASA\Admin\HealthCheck as AdminHealthCheck;
 use NDASA\Admin\Metrics as AdminMetrics;
@@ -57,6 +58,7 @@ try {
         $method === 'POST' && ($path === '/checkout' || $path === '/') => handle_checkout(),
         $method === 'GET'  && $path === '/success'       => render_success(),
         $method === 'GET'  && $path === '/admin'              => render_admin_dashboard(),
+        $method === 'GET'  && $path === '/admin/diagnostics'  => render_admin_diagnostics(),
         $method === 'GET'  && $path === '/admin/config'       => render_admin_config(),
         $method === 'POST' && $path === '/admin/config'       => handle_admin_config(),
         $method === 'POST' && $path === '/admin/stripe-mode'  => handle_admin_stripe_mode(),
@@ -488,6 +490,17 @@ function admin_redirect_to_dashboard(): void
     // NDASA_BASE_PATH accounts for subpath deploys (e.g. /donation) so the
     // redirect doesn't bounce through the parent site's router.
     header('Location: ' . NDASA_BASE_PATH . '/admin', true, 303);
+}
+
+function render_admin_diagnostics(): void
+{
+    // Read-only status page. No caching — admin is low-traffic and freshness
+    // matters more than a second of latency. Individual tiles swallow their
+    // own failures so a broken Stripe call never blanks the page.
+    $diagnostics = AdminDiagnostics::gather();
+    $appVersion  = AdminVersion::current();
+
+    require __DIR__ . '/../templates/admin/diagnostics.php';
 }
 
 function render_admin_config(?string $flashOk = null, ?string $flashErr = null): void

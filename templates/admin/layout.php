@@ -509,6 +509,60 @@ $appVersion ??= '';
     .mode-panel__form { align-items: stretch; }
     .mode-panel__hint { text-align: left; }
   }
+
+  /* Diagnostics — tile grid with colored left borders. Same 4-status system
+     (ok/warn/bad/gone) as the pulse heartbeat so a broken Stripe account
+     and a stale webhook look the same at a glance. */
+  .diag-section { margin: 24px 0; }
+  .diag-anchors {
+    display: flex; flex-wrap: wrap; gap: 4px 16px;
+    margin: -8px 0 24px;
+    font-size: 12px;
+  }
+  .diag-anchors a { color: var(--muted); text-decoration: none; padding: 2px 0; }
+  .diag-anchors a:hover { color: var(--cta); }
+  .diag-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 10px;
+  }
+  .diag-tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left-width: 3px;
+    border-radius: 6px;
+    padding: 10px 14px;
+    min-height: 68px;
+    display: flex; flex-direction: column; justify-content: flex-start;
+  }
+  .diag-tile--ok   { border-left-color: #4fa468; }
+  .diag-tile--warn { border-left-color: #c29632; }
+  .diag-tile--bad  { border-left-color: #c0504d; }
+  .diag-tile--gone { border-left-color: #6a6f7a; }
+  .diag-tile__label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.07em; color: var(--muted); margin-bottom: 4px;
+  }
+  .diag-tile__value {
+    font-size: 0.95rem; font-weight: 600; color: var(--ink);
+    word-break: break-word;
+  }
+  .diag-tile__detail {
+    margin-top: 4px; font-size: 11px; color: var(--dim);
+    word-break: break-word;
+  }
+  .diag-logtail {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px; line-height: 1.45;
+    color: var(--ink);
+    max-height: 360px;
+    overflow: auto;
+    white-space: pre;
+  }
 </style>
 </head>
 <body>
@@ -526,6 +580,7 @@ $appVersion ??= '';
     <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/transactions" class="<?= $active === 'transactions' ? 'active' : '' ?>">Transactions</a>
     <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/subscriptions" class="<?= $active === 'subscriptions' ? 'active' : '' ?>">Subscriptions</a>
     <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/donors" class="<?= $active === 'donors' ? 'active' : '' ?>">Donors</a>
+    <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/diagnostics" class="<?= $active === 'diagnostics' ? 'active' : '' ?>">Diagnostics</a>
     <a href="<?= Html::h(NDASA_BASE_PATH) ?>/admin/config" class="<?= $active === 'config' ? 'active' : '' ?>">Config</a>
   </nav>
 </header>
