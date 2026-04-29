@@ -108,31 +108,36 @@ ob_start();
   <ul class="impact-grid">
     <li>
       <button type="button" class="impact-card" data-impact-amount="25"
-        aria-label="Choose $25 donation to provide clothing for an orphaned child">
+        aria-label="Choose $25 donation to support prevention and education">
         <div class="impact-card__amount">$25</div>
+        <p class="impact-card__title">Support Prevention &amp; Education</p>
         <p>
-          Clothes an orphaned child for the season — warm essentials so
-          they stay in school and keep their dignity.
+          Help provide critical educational resources that promote
+          drug-free communities and raise awareness nationwide.
         </p>
       </button>
     </li>
     <li>
       <button type="button" class="impact-card impact-card--default" data-impact-amount="100"
-        aria-label="Choose $100 donation to keep a child in school">
+        aria-label="Choose $100 donation to fund scholarships and training">
         <div class="impact-card__amount">$100</div>
+        <p class="impact-card__title">Fund Scholarships &amp; Training</p>
         <p>
-          Keeps a child from a low-income family in school — tuition,
-          books, and supplies so lack of money never ends their education.
+          Support students pursuing careers in drug and alcohol testing,
+          public safety, and community health—helping build the next
+          generation of prevention leaders.
         </p>
       </button>
     </li>
     <li>
       <button type="button" class="impact-card" data-impact-amount="500"
-        aria-label="Choose $500 donation to help bring safe drinking water to a rural village">
+        aria-label="Choose $500 donation to empower communities and first responders">
         <div class="impact-card__amount">$500</div>
+        <p class="impact-card__title">Empower Communities &amp; First Responders</p>
         <p>
-          Helps bring a well or filtration system to a rural village so
-          families have reliable access to safe drinking water.
+          Make a direct impact by funding grants for first responder
+          agencies and nonprofit programs working on the front lines of
+          prevention, recovery, and public safety.
         </p>
       </button>
     </li>

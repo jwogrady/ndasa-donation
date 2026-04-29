@@ -1082,6 +1082,13 @@ a:hover { color: var(--cta); }
   color: var(--body);
   line-height: 1.45;
 }
+.impact-card__title {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--heading, var(--body));
+  margin-bottom: 0.4rem !important;
+  line-height: 1.25;
+}
 /* Selected state — when the donor clicks a card the matching preset
    radio gets :checked; we mirror that here via a sibling lookup so the
    card itself shows "this is your current pick". Implemented via a
